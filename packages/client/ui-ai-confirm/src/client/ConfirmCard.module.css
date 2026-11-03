@@ -1,0 +1,139 @@
+/* AI confirm card: a bordered batch with its records, an optional reason field, one status line and two actions. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  font-size: calc(13px + var(--dsh-content-font-delta, 0px));
+  line-height: 1.45;
+}
+
+.title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.records,
+.skipped ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.meta,
+.detail,
+.skippedTitle {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.status {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.skipped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skippedTitle {
+  margin: 0;
+  font-size: calc(12px + var(--dsh-content-font-delta, 0px));
+}
+
+.skippedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.reasonLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reason textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  resize: vertical;
+}
+
+.reason textarea[aria-invalid='true'] {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.reason textarea:disabled {
+  opacity: 0.6;
+}
+
+.error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.banner[data-failure] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
