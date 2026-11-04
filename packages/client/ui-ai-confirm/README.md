@@ -23,23 +23,23 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## Use this package
 
-The row ships `disabled: true` in the Web bundle. Turn it on in the profile patch (`$DSH_HOME/profiles/web/cordis.patch.yml`) and name the MCP server that connects the tool service:
+The row ships `disabled: true` in the Web bundle. Turn it on in the profile patch (`$DSH_HOME/profiles/web/cordis.patch.yml`) with a patch that sets ONLY `disabled: false` (no config):
 
 ```yaml
 - id: ui-ai-confirm
   disabled: false
-  config:
-    serverName: cinhed
 ```
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `serverName` | required | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, and `..._prepare_request_documents`. |
+| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, and `..._prepare_request_documents`. |
 | `toolsPath` | `/tools/pending` | Page path a reverse proxy forwards to the tool service's pending-batch routes. |
 | `apiPath` | `/api/v1` | Page path a reverse proxy forwards to Django's API. |
 | `signInUrl` | `/login` | Page that signs staff in with login and 2FA. Opened in a new tab. |
 
-All three paths are checked at load: each must be an absolute path on the page's own origin, so the card never calls or links to another site.
+The browser creates every client row with no config, so a `config:` block in `cordis.yml` never reaches this plugin. These defaults are fixed in the bundle. The tool service must be connected as the MCP server named `cinhed`; to change a setting, change its default in `src/client/index.ts` and rebuild the package bundle.
+
+All three paths are checked at load: each must be an absolute path on the page's own origin, so the card never calls or links to another site. This applies to the defaults and any value passed to `Config`.
 
 ### What staff see
 
@@ -108,6 +108,7 @@ None. The package never edits earlier request tokens.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Settings are fixed at build time** — client rows receive no config from `cordis.yml`, so changing the server name or a path means editing a default and rebuilding the bundle.
 - **Chinese and English only** — the locale registry requires `zh` and `en`; every other language falls back to English per key. Add a language only with a translation someone can vouch for.
 - **Outcomes are not in the Session log** — a reload shows each application's current status, not which of this card's writes succeeded.
 - **Sign-in is a link** — the card does not host a login form. It opens `signInUrl` in a new tab, and staff return to the card and choose Try again.

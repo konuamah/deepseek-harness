@@ -33,11 +33,14 @@ function providePresentation(ctx: Context): Presentation {
   return presentation
 }
 
-async function boot(config: Record<string, unknown> = { serverName: 'cinhed' }) {
+/** Boots the plugin; with no config it passes none, as a real client row does. */
+async function boot(config?: Record<string, unknown>) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   const presentation = providePresentation(ctx)
-  const fiber = ctx.plugin({ inject: [...inject], apply, Config }, config as never)
+  const fiber = config === undefined
+    ? ctx.plugin({ inject: [...inject], apply, Config })
+    : ctx.plugin({ inject: [...inject], apply, Config }, config as never)
   await fiber.await()
   return { ctx, presentation, fiber }
 }
@@ -67,7 +70,7 @@ describe('apply', () => {
   })
 
   it('shares one store across the three cards', async () => {
-    const { presentation } = await boot()
+    const { presentation } = await boot({ serverName: 'cinhed' })
 
     const stores = presentation.slots.entries('tool.call.toolview').map(entry => entry.store)
 
@@ -89,13 +92,13 @@ describe('apply', () => {
   })
 
   it('registers the zh and en dictionaries', async () => {
-    const { presentation } = await boot()
+    const { presentation } = await boot({ serverName: 'cinhed' })
 
     expect(presentation.dictionaries).toEqual([{ namespace: 'aiConfirm', dictionaries: { zh, en } }])
   })
 
   it('removes every registration when the plugin is disposed (hot-reload safety)', async () => {
-    const { presentation, fiber } = await boot()
+    const { presentation, fiber } = await boot({ serverName: 'cinhed' })
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(3)
 
     await fiber.dispose()
@@ -105,7 +108,7 @@ describe('apply', () => {
   })
 
   it('calls the page fetch at the moment of each request', async () => {
-    const { presentation } = await boot()
+    const { presentation } = await boot({ serverName: 'cinhed' })
     const calls: string[] = []
     // The card's api calls fetch with a path string, so the stub reads it as one.
     vi.stubGlobal('fetch', async (input: string) => {
@@ -120,17 +123,33 @@ describe('apply', () => {
 
     expect(calls).toEqual(['/tools/pending/abc/consume'])
   })
+
+  it('runs with no config at all, as a real client row does', async () => {
+    const { presentation } = await boot()
+
+    expect(presentation.slots.entries('tool.call.toolview').map(entry => entry.options.key)).toEqual([
+      'mcp__cinhed__prepare_approve',
+      'mcp__cinhed__prepare_reject',
+      'mcp__cinhed__prepare_request_documents',
+    ])
+  })
 })
 
 describe('Config', () => {
-  it('needs a server name and fills the paths with their defaults', () => {
-    expect(Config({ serverName: 'cinhed' })).toMatchObject({
+  it('fills every setting with its default', () => {
+    expect(Config({})).toMatchObject({
       serverName: 'cinhed',
       toolsPath: '/tools/pending',
       apiPath: '/api/v1',
       signInUrl: '/login',
     })
-    expect(() => Config({} as never)).toThrow()
+  })
+
+  it('keeps the settings it is given', () => {
+    expect(Config({ serverName: 'school_ai' })).toMatchObject({
+      serverName: 'school_ai',
+      toolsPath: '/tools/pending',
+    })
   })
 
   it.each([

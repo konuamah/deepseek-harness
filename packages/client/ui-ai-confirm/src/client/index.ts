@@ -9,7 +9,8 @@
  * session cookie travels with every call and no credential passes through the harness or the model.
  * Interaction state lives in a declared Session store so a card that remounts mid-confirm still shows
  * its progress. The card derives only from the logged call and result, and the outcome of a confirm is
- * read back from Django, never written to the session log.
+ * read back from Django, never written to the session log. Client rows receive no config from cordis.yml,
+ * so the settings are fixed at build time by their defaults.
  */
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -32,7 +33,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Deployment settings of the confirm card. */
 export interface Config {
-  /** `serverName` of the MCP entry that connects the tool service; the tool wire names derive from it. */
+  /** MCP server name of the tool service; its tool wire names derive from it. */
   serverName: string
   /** Page path the proxy forwards to the tool service's pending-batch routes. */
   toolsPath: string
@@ -45,9 +46,9 @@ export interface Config {
 /** A path prefix on the page's own origin: absolute, no trailing slash, no scheme. */
 const pathPrefix = z.string().pattern(/^\/(?:[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*)?$/)
 
-/** Settings as written in cordis.yml: only the server name is required; the paths default. */
-export const Config: z<Partial<Config> & Pick<Config, 'serverName'>, Config> = z.object({
-  serverName: z.string().pattern(/^[A-Za-z0-9_-]{1,32}$/).required(),
+/** Settings with their defaults. The browser creates every client row with no config, so these defaults are what always runs. */
+export const Config: z<Partial<Config>, Config> = z.object({
+  serverName: z.string().pattern(/^[A-Za-z0-9_-]{1,32}$/).default('cinhed'),
   toolsPath: pathPrefix.default('/tools/pending'),
   apiPath: pathPrefix.default('/api/v1'),
   // An absolute path on this origin: the card never navigates to another site.
@@ -60,9 +61,9 @@ export const inject = ['slots', 'locale']
 /**
  * Client plugin body: register the dictionary and one card per prepare tool.
  * @param ctx - client root context.
- * @param config - deployment settings.
+ * @param config - deployment settings; defaults when the row passes none.
  */
-export function apply(ctx: ClientContext, config: Config): void {
+export function apply(ctx: ClientContext, config: Config = Config({})): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-ai-confirm: dictionaries')
   const store = createConfirmStore()
   const api = createConfirmApi({

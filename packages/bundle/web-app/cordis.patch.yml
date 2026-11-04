@@ -383,10 +383,10 @@
       name: '@deepseek-ai/dsh-client-ui-skill'
 
     # Opt-in: the confirm card for the CInHEd tool service's prepare tools. It does nothing until a
-    # profile patch turns it on and names the MCP server, for example:
+    # profile patch turns it on. Client rows get no config, so the tool service must be connected as
+    # the MCP server named `cinhed`:
     #   - id: ui-ai-confirm
     #     disabled: false
-    #     config: { serverName: cinhed }
     - id: ui-ai-confirm
       name: '@deepseek-ai/dsh-client-ui-ai-confirm'
       disabled: true
