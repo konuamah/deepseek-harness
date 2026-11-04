@@ -8,7 +8,7 @@
  * a development rebuild watcher also supplies bundle changes.
  */
 import { statSync } from 'node:fs'
-import type { ServerResponse } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type imports carry the clientModules/webServer Context merges.
@@ -35,6 +35,13 @@ export interface Config {
 export const Config: z<Config> = z.object({
   pollIntervalMs: z.number().step(1).min(1).default(500),
 })
+
+/** Structural view of the Host connection service; only the admission surface is read. */
+interface EventsConnection {
+  admitAsync(request: IncomingMessage): Promise<EventsAdmission>
+}
+
+type EventsAdmission = { readonly peer: unknown } | { readonly rejection: 401 | 403 }
 
 /** Serialize one frame as an SSE data line. */
 function sseData(frame: PluginsEventFrame): string {
@@ -177,6 +184,23 @@ export function apply(ctx: Context, config: Config): void {
     res.on('close', () => { connections.delete(res) })
   }
 
+  // With an external Peer provider present, the stream opens only for admitted Peers.
+  const admitThenConnect = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const connection = ctx.get('connection') as EventsConnection | undefined
+    if (connection === undefined) {
+      res.writeHead(401)
+      res.end()
+      return
+    }
+    const admission = await connection.admitAsync(req)
+    if ('rejection' in admission) {
+      res.writeHead(admission.rejection)
+      res.end()
+      return
+    }
+    connect(res)
+  }
+
   ctx.effect(() => {
     const disposeRoute = ctx.webServer.register({
       kind: 'exact',
@@ -189,7 +213,11 @@ export function apply(ctx: Context, config: Config): void {
           res.end()
           return
         }
-        connect(res)
+        if (ctx.get('externalPeerAdmission') === undefined) {
+          connect(res)
+          return
+        }
+        void admitThenConnect(req, res)
       },
     })
     const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)

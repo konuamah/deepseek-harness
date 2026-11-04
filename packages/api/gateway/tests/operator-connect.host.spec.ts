@@ -16,6 +16,8 @@ import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import type { ExternalPeerAdmission } from '@deepseek-ai/dsh-client-connection'
+import type { Principal } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import { z } from 'zod'
@@ -200,7 +202,27 @@ describe('operator connect through Loader composition', () => {
     expect(passive.frames.filter(item => item.type === 'item')).toEqual([])
   })
 
+  it('upgrades an external provider Peer and leaves owner cookies to the owner path', async () => {
+    const host = await boot()
+    const admit = vi.fn<ExternalPeerAdmission['admit']>(async () => ({ kind: 'allow', key: 'staff:42', principal: STAFF }))
+    host.ctx.provide('externalPeerAdmission', { admit })
+    const owner = await mux(host, await exchange(host, 'none'))
+    expect(admit).not.toHaveBeenCalled()
+    await close(owner)
+    const external = await mux(host, '')
+    expect(admit).toHaveBeenCalledOnce()
+    await close(external)
+  })
 })
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface PrincipalMap {
+    /** Test-only non-owner caller identity; each driver declares its own entry. */
+    staff: { readonly kind: 'staff'; readonly userId: number; readonly role: string }
+  }
+}
+
+const STAFF: Principal = { kind: 'staff', userId: 42, role: 'teacher' }
 
 async function boot(): Promise<Host> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-operator-connect-'))

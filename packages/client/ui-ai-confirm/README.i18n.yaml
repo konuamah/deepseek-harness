@@ -1,0 +1,64 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-ai-confirm/README.md
+/:
+  en: 37af7fdb72182964
+  zh: 05a41a5799f57776
+/deepseek-ai-dsh-client-ui-ai-confirm:
+  en: 6553c83b18233f85
+  zh: ef7b3aff16617299
+/deepseek-ai-dsh-client-ui-ai-confirm/summary:
+  en: 8f00f3a016680433
+  zh: a10b0b47908e315f
+/deepseek-ai-dsh-client-ui-ai-confirm/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: d152484eb41ac6b4
+/deepseek-ai-dsh-client-ui-ai-confirm/use-this-package:
+  en: f2b001e1b7848a8c
+  zh: ccfcb5c4ecfe6b78
+/deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/what-staff-see:
+  en: 1cce642868c0bf45
+  zh: 894a5723d23e53a8
+/deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/proxy-requirements:
+  en: 58130e3fe2588719
+  zh: f9920316abfaa86f
+/deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 42b15ac6321706aa
+/deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/registration:
+  en: c20bd28061ac1721
+  zh: 276100f583c50de0
+/deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/flow:
+  en: 9b14e6dfd941de16
+  zh: 12b4ade9a2cd8750
+/deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/state:
+  en: 695ad07eb076372d
+  zh: ca0672012e73c1c6
+/deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/replay:
+  en: 9ca5fb288493aed6
+  zh: dd5f67107d94fb3f
+/deepseek-ai-dsh-client-ui-ai-confirm/further-exploration:
+  en: 8596e25a92335323
+  zh: 1e5f8f1dc1052f62
+/deepseek-ai-dsh-client-ui-ai-confirm/model-experience:
+  en: 215e7ba838619b7b
+  zh: 215e7ba838619b7b
+/deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch:
+  en: f5898f4b29bfdc27
+  zh: f5898f4b29bfdc27
+/deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch/what-the-model-sees:
+  en: 52b87873de8e897e
+  zh: 45ccc917082fb9a6
+/deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch/token-effect:
+  en: 5eed36a8feed3c7a
+  zh: b778d7bde999b35d
+/deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch/kv-cache-effect:
+  en: 07760e9d353e9256
+  zh: a6377f1ba32ed036
+/deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work:
+  en: 9061672df5474606
+  zh: e3f67be145a27c19
+/deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work/dev-note:
+  en: cbd1d5fc732e2c0c
+  zh: 45f66e768bf30e44

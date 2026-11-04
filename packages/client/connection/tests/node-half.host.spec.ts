@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { Principal } from '@deepseek-ai/dsh-typert-protocol'
 import {
   API_PATH,
   RpcId,
@@ -16,6 +17,8 @@ import {
   inject,
   type ClientRequest,
   type ConnectionConfig,
+  type ExternalAdmission,
+  type ExternalPeerAdmission,
   type HostConnectionHandle,
   type PeerScope,
 } from '../src/index.ts'
@@ -102,6 +105,7 @@ async function mounted(
   config?: ConnectionConfig,
   protocol: WebServer['protocol'] = 'http:',
   credentials?: CredentialProvider,
+  external?: ExternalPeerAdmission,
 ): Promise<{
   ctx: Context
   routes: WebRoute[]
@@ -114,6 +118,7 @@ async function mounted(
   const upgrades: WebUpgradeRoute[] = []
   if (credentials === undefined) provideBrowserCredentials(ctx)
   else ctx.provide('credentials', credentials)
+  if (external !== undefined) ctx.provide('externalPeerAdmission', external)
   ctx.provide('webServer', fakeHttpServer(routes, upgrades, '127.0.0.1', protocol) as WebServer)
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
@@ -960,5 +965,225 @@ describe('connection node half over a real HTTP server', () => {
       await close()
       await dispose()
     }
+  })
+})
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface PrincipalMap {
+    /** Test-only non-owner caller identity; each driver declares its own entry. */
+    staff: { readonly kind: 'staff'; readonly userId: number; readonly role: string }
+  }
+}
+
+const STAFF: Principal = { kind: 'staff', userId: 42, role: 'teacher' }
+const ADMIN: Principal = { kind: 'staff', userId: 42, role: 'admin' }
+
+/** Provider whose admit spy answers the given decision until a test overrides it. */
+function externalProvider(decision: ExternalAdmission = { kind: 'deny' }): {
+  admit: ReturnType<typeof vi.fn<ExternalPeerAdmission['admit']>>
+  provider: ExternalPeerAdmission
+} {
+  const admit = vi.fn<ExternalPeerAdmission['admit']>(async () => decision)
+  return { admit, provider: { admit } }
+}
+
+/** Admit one request and return its Peer, failing the test when it is refused. */
+async function admittedPeer(connection: HostConnectionHandle, headers: Record<string, string> = { host: 'localhost' }): Promise<PeerScope> {
+  const admission = await connection.admitAsync(fakeRequest(headers))
+  if (!('peer' in admission)) throw new Error(`external Peer refused: ${String(admission.rejection)}`)
+  return admission.peer
+}
+
+describe('external Peer admission', () => {
+  it('keeps owner-only admission when no provider is provided', async () => {
+    const { routes, connection, dispose } = await mounted()
+    try {
+      const refused = fakeResponse()
+      await routes[0]!.handler(fakeRequest({ host: 'localhost' }), refused.response)
+      expect(refused.state).toMatchObject({ status: 401, body: 'unauthorized' })
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+    } finally { await dispose() }
+  })
+
+  it('answers owner browser and API cookies before the provider and never calls it for them', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { routes, connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const cookie = browserCookie(connection, 'localhost')
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost', cookie }))).toEqual({ peer: connection.browserPeer })
+
+      const token = new URL(connection.authenticatedUrl('http://localhost')).search
+      const connect = fakeResponse()
+      await routes.find(route => route.path === '/connect')!.handler(
+        fakeRequest({ host: 'localhost' }, `/connect${token}`), connect.response,
+      )
+      const apiCookie = connect.state.headers?.['set-cookie']?.split(';', 1)[0] ?? ''
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost', cookie: apiCookie }))).toMatchObject({
+        peer: { principal: { kind: 'owner' } },
+      })
+      expect(admit).not.toHaveBeenCalled()
+    } finally { await dispose() }
+  })
+
+  it('admits a provider-allowed request as a Peer for its principal and hands that Peer to API calls', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { routes, connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    const peers: PeerScope[] = []
+    const remove = connection.rpc.intercept('/api', endpoint => endpoint === 'goals/create', async (_endpoint, _payload, _signal, peer) => {
+      peers.push(peer)
+      return { ok: true, value: null }
+    })
+    try {
+      const fromFetchHeaders = await connection.admitAsync({ headers: new Headers({ host: 'localhost' }) })
+      if (!('peer' in fromFetchHeaders)) throw new Error('external Peer refused')
+      expect(fromFetchHeaders.peer.principal).toEqual(STAFF)
+      expect(admit).toHaveBeenLastCalledWith({ host: 'localhost' })
+
+      await connection.admitAsync({ headers: { host: 'localhost', 'x-multi': ['a', 'b'], 'x-none': undefined } })
+      expect(admit).toHaveBeenLastCalledWith({ host: 'localhost', 'x-multi': ['a', 'b'], 'x-none': undefined })
+
+      const request: ClientRequest = { type: 'client-request', rpcId: RpcId('rpc-external'), method: 'goals/create', payload: {} }
+      const answered = fakeResponse()
+      await routes[0]!.handler(fakePost({ host: 'localhost' }, `${API_PATH}/goals/create`, request), answered.response)
+      expect(answered.state.status).toBe(200)
+      expect(peers.map(peer => peer.principal)).toEqual([STAFF])
+    } finally {
+      await remove()
+      await dispose()
+    }
+  })
+
+  it('shares one Peer per key and creates a distinct Peer for another key', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const first = await admittedPeer(connection)
+      admit.mockResolvedValueOnce({ kind: 'allow', key: 'staff:42', principal: { ...STAFF } })
+      expect(await admittedPeer(connection)).toBe(first)
+      admit.mockResolvedValueOnce({ kind: 'allow', key: 'staff:7', principal: STAFF })
+      expect(await admittedPeer(connection)).not.toBe(first)
+    } finally { await dispose() }
+  })
+
+  it('refuses a provider denial on admitAsync and on the API route', async () => {
+    const { admit, provider } = externalProvider({ kind: 'deny' })
+    const { routes, connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+      const refused = fakeResponse()
+      await routes[0]!.handler(fakeRequest({ host: 'localhost' }), refused.response)
+      expect(refused.state).toMatchObject({ status: 401, body: 'unauthorized' })
+      expect(admit).toHaveBeenCalledTimes(2)
+    } finally { await dispose() }
+  })
+
+  it('treats a throwing provider as a denial', async () => {
+    const { admit, provider } = externalProvider()
+    admit.mockRejectedValue(new Error('provider unavailable'))
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+    } finally { await dispose() }
+  })
+
+  it('refuses an allow decision that names the reserved owner principal', async () => {
+    const { provider } = externalProvider({ kind: 'allow', key: 'owner:1', principal: { kind: 'owner' } })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      expect(await connection.admitAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+    } finally { await dispose() }
+  })
+
+  it('refuses untrusted Host and Origin before the provider is called', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { routes, connection, dispose } = await mounted({ trustedHosts: ['harness.example'] }, 'http:', undefined, provider)
+    try {
+      expect(await connection.admitAsync(fakeRequest({ host: 'other.example' }))).toEqual({ rejection: 403 })
+      const forged = fakeResponse()
+      await routes[0]!.handler(fakeRequest({
+        host: 'harness.example', origin: 'http://other.example', 'sec-fetch-site': 'cross-site',
+      }), forged.response)
+      expect(forged.state).toMatchObject({ status: 403, body: 'forbidden' })
+      expect(admit).not.toHaveBeenCalled()
+    } finally { await dispose() }
+  })
+
+  it('disposes an external Peer by key and admits a fresh one afterwards', async () => {
+    const { provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const first = await admittedPeer(connection)
+      connection.disposeExternalPeer('staff:42')
+      await expect.poll(() => first.signal.aborted).toBe(true)
+      const second = await admittedPeer(connection)
+      expect(second).not.toBe(first)
+      expect(() => { connection.disposeExternalPeer('staff:absent') }).not.toThrow()
+    } finally { await dispose() }
+  })
+
+  it('replaces the Peer for a key whose principal changed and aborts the old one', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const first = await admittedPeer(connection)
+      admit.mockResolvedValueOnce({ kind: 'allow', key: 'staff:42', principal: ADMIN })
+      const replaced = await admittedPeer(connection)
+      expect(replaced).not.toBe(first)
+      expect(replaced.principal).toEqual(ADMIN)
+      await expect.poll(() => first.signal.aborted).toBe(true)
+      expect(replaced.signal.aborted).toBe(false)
+    } finally { await dispose() }
+  })
+
+  it('shares external sockets without claiming or releasing their Peer', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { routes, connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const socket = await connection.admitConnectionAsync(fakeRequest({ host: 'localhost' }))
+      if (!('peer' in socket)) throw new Error('external socket refused')
+      expect(socket.peer.principal).toEqual(STAFF)
+      await socket.release()
+      expect(socket.peer.signal.aborted).toBe(false)
+
+      admit.mockResolvedValueOnce({ kind: 'deny' })
+      expect(await connection.admitConnectionAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+
+      const cookie = browserCookie(connection, 'localhost')
+      const owner = await connection.admitConnectionAsync(fakeRequest({ host: 'localhost', cookie }))
+      expect(owner).toMatchObject({ peer: connection.browserPeer })
+      expect(admit).toHaveBeenCalledTimes(2)
+
+      const token = new URL(connection.authenticatedUrl('http://localhost')).search
+      const connect = fakeResponse()
+      await routes.find(route => route.path === '/connect')!.handler(
+        fakeRequest({ host: 'localhost' }, `/connect${token}`), connect.response,
+      )
+      const apiCookie = connect.state.headers?.['set-cookie']?.split(';', 1)[0] ?? ''
+      const claimed = connection.admitConnection(fakeRequest({ host: 'localhost', cookie: apiCookie }))
+      expect(await connection.admitConnectionAsync(fakeRequest({ host: 'localhost', cookie: apiCookie }))).toEqual({ rejection: 409 })
+      expect(admit).toHaveBeenCalledTimes(2)
+      if ('rejection' in claimed) throw new Error('API socket refused')
+      await claimed.release()
+    } finally { await dispose() }
+  })
+
+  it('aborts external Peers when the Connection is disposed', async () => {
+    const { provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    const peer = await admittedPeer(connection)
+    await dispose()
+    await expect.poll(() => peer.signal.aborted).toBe(true)
+    expect(await connection.admitAsync(fakeRequest({ host: 'localhost' }))).toEqual({ rejection: 401 })
+  })
+
+  it('refuses a provider decision that resolves after the Connection is disposed', async () => {
+    const { admit, provider } = externalProvider()
+    const finish = Promise.withResolvers<ExternalAdmission>()
+    admit.mockReturnValueOnce(finish.promise)
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    const pending = connection.admitAsync(fakeRequest({ host: 'localhost' }))
+    await dispose()
+    finish.resolve({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    expect(await pending).toEqual({ rejection: 401 })
   })
 })

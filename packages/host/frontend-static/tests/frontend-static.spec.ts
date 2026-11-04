@@ -6,6 +6,7 @@
  * GET/HEAD, and seat release on fiber disposal (HMR safety).
  */
 
+import { request as httpRequest } from 'node:http'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,8 +30,11 @@ afterEach(async () => {
   root = undefined
 })
 
-/** Write a dist fixture and the authenticated Web rows, then boot them through the real Loader. */
-async function loadComposition(): Promise<Context> {
+/**
+ * Write a dist fixture and the authenticated Web rows, then boot them through the real Loader.
+ * An external provider, when given, is provided on the root context before the rows boot.
+ */
+async function loadComposition(external?: Connection.ExternalPeerAdmission): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -62,6 +66,7 @@ async function loadComposition(): Promise<Context> {
 
   context = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'
+  if (external !== undefined) context.provide('externalPeerAdmission', external)
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
@@ -127,6 +132,12 @@ describe('real Loader composition', () => {
       type: 'text/plain; charset=utf-8',
       body: 'dsh web authentication required; reopen the URL printed by dsh web.\n',
     })
+    // Without a provider the refusal is the owner's own 401: no redirect and no
+    // cookie; its no-store header is Connection's, not the staff path's.
+    const refused = await fetch(`http://127.0.0.1:${String(port)}/`)
+    expect(refused.headers.get('cache-control')).toBe('no-store')
+    expect(refused.headers.get('location')).toBeNull()
+    expect(refused.headers.get('set-cookie')).toBeNull()
 
     // Real assets with their MIME types; a live rebuild is served on the next read.
     expect(await request(port, '/app.js')).toMatchObject({ status: 200, type: 'text/javascript; charset=utf-8', body: 'export {}' })
@@ -301,5 +312,121 @@ describe('real Loader composition', () => {
     expect(await html.text()).toBe('<body>preview</body>')
     const index = await loaded.webServer.readResource(new Request(`${base}/`), reader)
     expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, null, null])
+  })
+})
+
+/** GET one path with an exact Host header, which Fetch does not let a test set. */
+function getWithHost(port: number | undefined, path: string, host: string): Promise<{ status: number; body: string }> {
+  if (port === undefined) throw new Error('frontend-static test: the listener has not bound a port')
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+      res.on('end', () => {
+        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+      })
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+describe('external Peer index admission', () => {
+  const STAFF: Connection.Principal = { kind: 'staff', userId: 42, role: 'teacher' }
+  /** Path and query with characters that must survive the `next` round trip. */
+  const next = '/?x=a%20b&y=%C3%A9/&z=1'
+  let answer: () => Promise<Connection.ExternalAdmission>
+  let attempts = 0
+  const provider: Connection.ExternalPeerAdmission = {
+    admit() {
+      attempts += 1
+      return answer()
+    },
+  }
+
+  it('admits a staff Peer for the index, keeps the owner cookie first, and leaves assets public', { timeout: 60_000 }, async () => {
+    answer = async () => ({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    attempts = 0
+    const loaded = await loadComposition(provider)
+    const base = `http://127.0.0.1:${String(loaded.webServer.port)}`
+    loaded.on('webserver/index-inject', (rows, peer) => {
+      rows.push({ kind: 'global', name: 'who', value: peer.principal })
+    })
+
+    // The launch token still exchanges for the owner cookie; the provider is not consulted.
+    const exchange = await fetch(loaded.connection.authenticatedUrl(base), { redirect: 'manual' })
+    expect(exchange.status).toBe(303)
+    const cookie = (exchange.headers.get('set-cookie') ?? '').split(';', 1)[0]!
+    expect(attempts).toBe(0)
+
+    const owner = await fetch(`${base}/`, { headers: { cookie } })
+    expect(owner.status).toBe(200)
+    expect(owner.headers.get('cache-control')).toBeNull()
+    expect(await owner.text()).toContain('owner')
+    expect(attempts).toBe(0)
+
+    // An anonymous index request is admitted as the staff Peer, rendered uncached.
+    const staff = await fetch(`${base}/`)
+    expect(staff.status).toBe(200)
+    expect(staff.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(staff.headers.get('cache-control')).toBe('no-store')
+    expect(staff.headers.get('set-cookie')).toBeNull()
+    const html = await staff.text()
+    expect(html).toContain('teacher')
+    expect(html).not.toContain('owner')
+    expect(html.match(/<base\b/g)).toHaveLength(1)
+    expect(attempts).toBe(1)
+
+    // Static assets stay public and never reach the provider.
+    expect((await fetch(`${base}/app.js`)).status).toBe(200)
+    expect(attempts).toBe(1)
+  })
+
+  it('redirects a refused or failing index request to loginUrl with the path and query in next', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition(provider)
+    const base = `http://127.0.0.1:${String(loaded.webServer.port)}`
+    const headers = {
+      referer: 'https://evil.example/',
+      'x-forwarded-host': 'evil.example',
+      'x-forwarded-proto': 'https',
+      'x-forwarded-prefix': '//evil.example',
+    }
+    const throws = async (): Promise<Connection.ExternalAdmission> => {
+      throw new Error('provider down')
+    }
+
+    for (const decide of [async () => ({ kind: 'deny' as const }), throws]) {
+      answer = decide
+      const before = attempts
+      const denied = await fetch(`${base}${next}`, { redirect: 'manual', headers })
+      expect(attempts).toBe(before + 1)
+      expect(denied.status).toBe(302)
+      const location = denied.headers.get('location') ?? ''
+      expect(location).toBe(`/login?next=${encodeURIComponent(next)}`)
+      expect(decodeURIComponent(location.slice('/login?next='.length))).toBe(next)
+      expect(location).not.toContain('evil')
+      expect(denied.headers.get('cache-control')).toBe('no-store')
+      expect(denied.headers.get('set-cookie')).toBeNull()
+    }
+  })
+
+  it('answers the owner 401 without asking the provider for a request that fails the Host fence', { timeout: 60_000 }, async () => {
+    answer = async () => ({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    attempts = 0
+    const loaded = await loadComposition(provider)
+    const response = await getWithHost(loaded.webServer.port, '/', 'evil.example')
+    expect(response).toEqual({
+      status: 401,
+      body: 'dsh web authentication required; reopen the URL printed by dsh web.\n',
+    })
+    expect(attempts).toBe(0)
+  })
+
+  it('rejects a loginUrl that is not a same-origin absolute path', () => {
+    expect(FrontendStatic.Config({ distIndex: '/dist/index.html' }).loginUrl).toBe('/login')
+    expect(FrontendStatic.Config({ distIndex: '/dist/index.html', loginUrl: '/sign-in' }).loginUrl).toBe('/sign-in')
+    for (const loginUrl of ['//evil.example', '/\\evil.example', 'https://x', 'login']) {
+      expect(() => FrontendStatic.Config({ distIndex: '/dist/index.html', loginUrl })).toThrow()
+    }
   })
 })

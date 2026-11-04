@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/django-authenticator.ts",
+    "src/index.ts",
+    "src/owner-index.ts",
+    "src/plugin.ts",
+    "src/policy.ts",
+    "src/principal.ts",
+    "src/types.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../core/session" },
+    { "path": "../remote-access/tsconfig.host.json" }
+  ]
+}

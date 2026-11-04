@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-从配置的发布目录向浏览器提供已构建的 Web 壳。根路径与配置的 index 路径渲染包含启动信息的 index；已有资产直接提供，而缺失或非文件路径返回 404、路径遍历返回 403、不支持的方法返回 405。访问 index 需要有效的进程 token 或浏览器 cookie，但静态资产仍可公开访问。同一时间只能有一个实例处理未匹配的路由；第二个实例启动失败，卸载活动实例后，未匹配的请求返回 404。
+从配置的发布目录向浏览器提供已构建的 Web 壳。根路径与配置的 index 路径渲染包含启动信息的 index；已有资产直接提供，而缺失或非文件路径返回 404、路径遍历返回 403、不支持的方法返回 405。访问 index 需要有效的进程 token 或浏览器 cookie，但静态资产仍可公开访问。组合了外部 Peer 提供方时，被浏览器认证拒绝的 index 请求可能被准入为 staff Peer，或重定向到 `loginUrl`。同一时间只能有一个实例处理未匹配的路由；第二个实例启动失败，卸载活动实例后，未匹配的请求返回 404。
 
 ## 目录
 
@@ -33,7 +33,10 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-host-frontend-static'
   config:
     distIndex: /absolute/path/to/dist/index.html
+    loginUrl: /login # optional; a same-origin absolute path
 ```
+
+`loginUrl`（默认 `/login`）是组合了外部 Peer 提供方时，被拒绝的 index 请求重定向的位置。它必须以单个 `/` 开头；`//host` 与 `/\host` 会在加载时被拒绝。
 
 `distIndex` 是组合应用的组装事实：[`dsh-web-app`](../../bundle/web-app/README.zh.md) 通过前端包的 exports 解析它并挂载本插件；部署绝不硬编码它。
 
@@ -43,9 +46,9 @@ kind: "package-reference"
 
 所服务的 HTML 携带唯一的文档 base `<base href="./">`，位于每一条注入资源行之前，因此它冻结页面加载时所处的入口目录：shell 自身的应用目录相对引用与宿主的插件资源行都在服务该页面的挂载下解析。同一份 index 因而既服务源站根目录，也服务剥离前缀的代理所拥有的任一挂载；本插件只为 dist 根目录与配置的 index 路径渲染它。
 
-对根路径与配置 index 的 HTTP 请求会在读取 HTML 前调用 `ctx.connection.authorizeIndex`。有效进程 token 会得到 303 重定向与持久浏览器 cookie；已有有效 cookie 时直接提供 index；其他 index 请求得到 Connection 所有的 401 响应。非 index 文件仍是公开静态资源。Token、cookie、过期时间与签名记录语义都归 Connection 所有。
+对根路径与配置 index 的 HTTP 请求会在读取 HTML 前调用 `ctx.connection.authorizeIndex`。有效进程 token 会得到 303 重定向与持久浏览器 cookie；已有有效 cookie 时直接提供 index；其他 index 请求得到 Connection 所有的 401 响应。组合了外部 Peer 提供方时，该 401 先交给提供方裁决：获准的请求以 staff Peer 渲染 index，带 `cache-control: no-store`，且不设置 cookie；提供方拒绝或失败，或请求未通过 Host/Origin 栅栏，则得到 302，重定向到 `loginUrl?next=<路径与查询>`（302 同样带 `cache-control: no-store`）；`next` 只取自请求 URL，绝不取自任何 header。非 index 文件仍是公开静态资源，且从不交给提供方。Token、cookie、过期时间与签名记录语义都归 Connection 所有。
 
-除 index 外，所有提供的文件都由浏览器重新验证。这类响应携带 `cache-control: no-cache` 和由文件内容 SHA-1 生成的弱 ETag，因此文件内容变化后即使名字不变也会得到新的 ETag；`If-None-Match` 等于当前 ETag 的请求得到空的 304。渲染出的 index 不带缓存头。
+除 index 外，所有提供的文件都由浏览器重新验证。这类响应携带 `cache-control: no-cache` 和由文件内容 SHA-1 生成的弱 ETag，因此文件内容变化后即使名字不变也会得到新的 ETag；`If-None-Match` 等于当前 ETag 的请求得到空的 304。所有者或进程内读取所渲染的 index 不带缓存头；staff Peer 的 index 带 `cache-control: no-store`。
 
 ### 可观察的失败
 

@@ -40,7 +40,7 @@ async function boot(config?: Record<string, unknown>) {
   const presentation = providePresentation(ctx)
   const fiber = config === undefined
     ? ctx.plugin({ inject: [...inject], apply, Config })
-    : ctx.plugin({ inject: [...inject], apply, Config }, config as never)
+    : ctx.plugin({ inject: [...inject], apply, Config }, config)
   await fiber.await()
   return { ctx, presentation, fiber }
 }

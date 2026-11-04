@@ -52,6 +52,7 @@ export {
   serverResponseSchema,
 } from './rpc-schema.ts'
 export { HostConnectionService } from './rpc-host.ts'
+export type { ExternalAdmission, ExternalPeerAdmission } from './external-admission.ts'
 
 export { API_PATH } from './api-path.ts'
 
@@ -148,7 +149,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
       kind: 'prefix',
       path: API_PATH,
       handler: async (req, res) => {
-        const admission = connection.admit(req)
+        const admission = await connection.admitAsync(req)
         if ('rejection' in admission) {
           res.writeHead(admission.rejection)
           res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')

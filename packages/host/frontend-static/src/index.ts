@@ -6,7 +6,11 @@
  * dist root is 403, unknown extensions ship as octet-stream, and non-GET/HEAD
  * is 405. An HTTP index request first passes Connection's browser
  * authentication and renders for the browser Peer; an in-process read renders
- * for the Peer its caller admitted. Both renders go through the webserver's
+ * for the Peer its caller admitted. When an external Peer provider is composed
+ * and browser authentication refuses an HTTP index request, the provider may
+ * admit a staff Peer (rendered with `cache-control: no-store`); a refusal
+ * redirects to `loginUrl` with the requested path and query in `next`.
+ * Both renders go through the webserver's
  * index render (structured injection rows, then raw taps). Non-index assets
  * stay public; every file other than the index carries a weak ETag with
  * `cache-control: no-cache` and answers a matching `If-None-Match` with 304,
@@ -21,7 +25,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-client-connection'
+import type { PeerScope } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** Stable Cordis plugin name. */
@@ -34,11 +38,23 @@ export const inject = ['webServer', 'connection']
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /**
+   * Same-origin path a refused index request redirects to, with the requested
+   * path and query in `next`. Used only when an external Peer provider is composed.
+   * @default '/login'
+   */
+  loginUrl?: string
 }
 
 export const Config: z<Config> = z.object({
   distIndex: z.string().required(),
+  loginUrl: z.string().pattern(/^\/(?![/\\])/).default('/login'),
 })
+
+/** Who may read the index, or the response that refuses it. */
+type IndexAccess =
+  | { readonly response: Response }
+  | { readonly peer?: PeerScope | undefined; readonly staff?: boolean }
 
 const HTML_MIME = 'text/html; charset=utf-8'
 
@@ -82,9 +98,10 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
  * @param authorizeIndex - answers an index request before its bytes are read:
- * the response to send instead of the index, or undefined to serve it.
+ * the refusal to send instead of the index, or the Peer to render it for.
  * @param renderIndex - turns the raw index.html body into the served document
- * for the dist root and configured index path.
+ * for the Peer given (undefined means the browser Peer) and the dist root and
+ * configured index path.
  * @returns the dist response; a HEAD response carries the GET status and
  * headers without a body. A file other than the index carries
  * `cache-control: no-cache` and a weak ETag from a SHA-1 of its bytes, and a
@@ -92,8 +109,8 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  */
 async function serveStatic(
   request: Request, distRoot: string, distIndex: string,
-  authorizeIndex: () => Response | undefined,
-  renderIndex: (html: string) => string,
+  authorizeIndex: () => Promise<IndexAccess>,
+  renderIndex: (html: string, peer: PeerScope | undefined) => string,
 ): Promise<Response> {
   const target = resolve(normalize(join(distRoot, decodeURIComponent(new URL(request.url).pathname))))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
@@ -104,10 +121,11 @@ async function serveStatic(
   let headers: Record<string, string>
   try {
     if (target === distRoot || target === distIndex) {
-      const refusal = authorizeIndex()
-      if (refusal !== undefined) return refusal
-      body = renderIndex(await readFile(distIndex, 'utf8'))
-      headers = { 'content-type': HTML_MIME }
+      const access = await authorizeIndex()
+      if ('response' in access) return access.response
+      body = renderIndex(await readFile(distIndex, 'utf8'), access.peer)
+      // A staff Peer's page is per-user, so no cache may hold it.
+      headers = { 'content-type': HTML_MIME, ...(access.staff === true ? { 'cache-control': 'no-store' } : {}) }
     } else {
       body = await readFile(target)
       // Weak: gzip changes the transferred bytes.
@@ -133,10 +151,12 @@ async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
+  // schemastery's .default() guarantees the field is set after validation.
+  const loginUrl = config.loginUrl as string
   // Connection's browser authentication writes the token exchange's 303 or
   // the 401 through a writeHead/end response; capture it as a Fetch response.
   // The answer stays a 401 unless Connection writes another one.
-  const authorizeIndex = (request: Request): Response | undefined => {
+  const ownerIndex = (request: Request): IndexAccess => {
     let status = 401
     let headers = new Headers()
     let body: string | undefined
@@ -147,7 +167,24 @@ export function apply(ctx: Context, config: Config): void {
       },
       end(text) { body = text },
     })
-    return admitted ? undefined : new Response(body, { status, headers })
+    return admitted ? { peer: undefined } : { response: new Response(body, { status, headers }) }
+  }
+  // The owner path decides first. Only its own 401 goes on to the external
+  // provider, and only a request that passed the Host/Origin fence reaches it.
+  const authorizeIndex = async (request: Request): Promise<IndexAccess> => {
+    const owner = ownerIndex(request)
+    if (!('response' in owner) || owner.response.status !== 401 || ctx.get('externalPeerAdmission') === undefined) return owner
+    const admission = await ctx.connection.admitAsync(request)
+    if ('peer' in admission) return { peer: admission.peer, staff: true }
+    if (admission.rejection === 403) return owner
+    const url = new URL(request.url)
+    const next = url.pathname + url.search
+    return {
+      response: new Response(null, {
+        status: 302,
+        headers: { location: `${loginUrl}?next=${encodeURIComponent(next)}`, 'cache-control': 'no-store' },
+      }),
+    }
   }
   ctx.effect(() => ctx.webServer.registerFallback({
     resource: (request, peer) => serveStatic(
@@ -156,11 +193,11 @@ export function apply(ctx: Context, config: Config): void {
       distIndex,
       // A read with a Peer was admitted by its caller; an HTTP request carries
       // none and passes Connection's browser authentication instead.
-      () => peer === undefined ? authorizeIndex(request) : undefined,
+      () => peer === undefined ? authorizeIndex(request) : Promise.resolve({ peer }),
       // The browser authentication admits the owner's shared browser Peer. The
       // base goes in after all index transforms, so it precedes every resource
       // reference they insert.
-      html => ctx.webServer.renderIndex(html, peer ?? ctx.connection.browserPeer)
+      (html, rendered) => ctx.webServer.renderIndex(html, rendered ?? ctx.connection.browserPeer)
         .replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`),
     ),
   }), 'frontend-static: fallback seat')

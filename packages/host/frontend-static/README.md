@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access requires a valid process token or browser cookie, but static assets remain public. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
+Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access requires a valid process token or browser cookie, but static assets remain public. When an external Peer provider is composed, an index request that browser authentication refuses may be admitted as a staff Peer or redirected to `loginUrl`. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
 
 ## Table of Contents
 
@@ -33,7 +33,10 @@ Compose this plugin in a browser-facing host that serves the built Web shell: it
 - name: '@deepseek-ai/dsh-host-frontend-static'
   config:
     distIndex: /absolute/path/to/dist/index.html
+    loginUrl: /login # optional; a same-origin absolute path
 ```
+
+`loginUrl` (default `/login`) is where a refused index request is redirected when an external Peer provider is composed. It must start with a single `/`; `//host` and `/\host` are rejected at load.
 
 `distIndex` is an assembly fact of the composing application: [`dsh-web-app`](../../bundle/web-app/README.md) resolves it through the frontend package's exports and mounts this plugin; a deployment never hardcodes it.
 
@@ -43,9 +46,9 @@ Requests are served from the dist root (the directory containing `distIndex`). T
 
 The served HTML carries one document base, `<base href="./">`, ahead of every injected resource row, so it freezes the entry directory the page was loaded from: the shell's own app-directory-relative references and the Host's plugin-resource rows both resolve under the mount that served the page. The same index therefore serves the origin root and whatever mount a prefix-stripping proxy owns; this plugin renders it only for the dist root and the configured index path.
 
-HTTP root and configured-index requests call `ctx.connection.authorizeIndex` before reading HTML. A valid process token receives a 303 redirect plus the persistent browser cookie; an existing valid cookie serves the index; every other index request receives the Connection-owned 401 response. Non-index files remain public static assets. Connection owns the token, cookie, expiry, and signing-record semantics.
+HTTP root and configured-index requests call `ctx.connection.authorizeIndex` before reading HTML. A valid process token receives a 303 redirect plus the persistent browser cookie; an existing valid cookie serves the index; every other index request receives the Connection-owned 401 response. When an external Peer provider is composed, that 401 is first offered to the provider: an admitted request renders the index for the staff Peer with `cache-control: no-store` and sets no cookie; a denied or failing provider, or a request that fails the Host/Origin fence, gets a 302 to `loginUrl?next=<path and query>` (the 302 carries `cache-control: no-store`), and `next` is taken only from the request URL, never from headers. Non-index files remain public static assets and never reach the provider. Connection owns the token, cookie, expiry, and signing-record semantics.
 
-Browsers revalidate every served file except the index. Such a response carries `cache-control: no-cache` and a weak ETag built from a SHA-1 of the file's bytes, so a file whose content changes gets a new ETag even when its name stays the same; a request whose `If-None-Match` equals the current ETag receives an empty 304. The rendered index carries no cache headers.
+Browsers revalidate every served file except the index. Such a response carries `cache-control: no-cache` and a weak ETag built from a SHA-1 of the file's bytes, so a file whose content changes gets a new ETag even when its name stays the same; a request whose `If-None-Match` equals the current ETag receives an empty 304. The rendered index carries no cache headers for the owner or an in-process read; a staff Peer's index carries `cache-control: no-store`.
 
 ### Observable failures
 

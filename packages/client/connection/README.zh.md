@@ -48,6 +48,8 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 
 每个请求都代表一个 Peer：`principal` 指明调用方，`interactions` 决定能否参与转发事件，`signal` 在 scope 结束时中止。`ctx.connection.browserPeer` 由通过认证的浏览器连接共享，principal 为 owner，默认 `interactions: 'answer'`。`ctx.connection.admit(request)` 检查信任与浏览器或 API 认证，返回凭据对应的存活 Peer 或拒绝状态；`/api` 路由和 Gateway WebSocket 升级都使用该结果，处理器接收本次调用的 Peer。`ctx.connection.createPeer({ principal, interactions? })` 创建独立进程内 Peer，由读取该服务的 Context 或其自身的 `dispose()` 释放；省略 interactions 时默认 `answer`。导出的 `Peer` 类接受相同参数。`fetch(request, peer)` 和 HTTP bridge 必须显式接收 Peer；对非 owner Peer，exact route 返回 403。其他 principal 的方法级访问归 [`dsh-api-remote-access`](../../api/remote-access/README.zh.md)。
 
+`ctx.externalPeerAdmission` 是可选的 Cordis 服务，其 `admit(headers)` 返回 `{ kind: 'allow', key, principal }` 或 `{ kind: 'deny' }`。`ctx.connection.admitAsync(request)` 与 Gateway WebSocket 升级（`admitConnectionAsync`）只在 owner 路径拒绝、且请求已通过 Host/Origin 检查之后才调用它。提供方的错误按拒绝处理，owner principal 被拒绝。允许的 `key` 对应一个按 key 共享的 Peer，首次使用时以返回的 principal 创建；同一 key 之后以不同 principal 允许时，该 Peer 会被替换，旧 Peer 随之中止。socket 不占用外部 Peer，因此其 `release` 不做任何事。`ctx.connection.disposeExternalPeer(key)` 释放单个外部 Peer。未提供该服务时，准入行为与此前一致。
+
 仅供 API 使用的 `GET /connect?token=...&interactions=answer|none` 立即创建 principal 为 owner 的 Peer，返回 302、Mux 目标地址与签名 API Cookie。API 连接默认 `none`，非法或重复声明返回 400。HTTP 可先于 WebSocket 建立。一条 API socket 负责清理：重复关联返回 409，关闭时移除其 Peer，之后使用该 Cookie 的 HTTP 被拒绝。已受理 unary 调用保留请求级取消，但 Peer 释放后 `invocation.peer.ctx` 不再接受新的 effect 注册。API 调用方将 Cookie 与浏览器存储分开；两者使用相同的 authority 专属 Cookie 名称。
 
 通过认证的共享 HTTP 请求在传输请求体之前经过 `connection/request` waterfall。监听器可以拒绝新请求，或等待 `next()` 直到响应完成；释放所属 fiber 会移除准入行为。Desktop 使用此扩展点，在已批准的安装期间锁住新的 API 工作，而不取消已接纳的工作。客户端断开会中止处理函数的信号；桥接器停止写入 socket，并排空剩余响应块。WebSocket 流仍由 API Gateway 负责。
@@ -80,6 +82,7 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 - **缓冲型 `/api` 路由会把每个请求体保留在内存里**：`maxRequestBodyBytes`（默认 300 MiB，按默认 200 MiB 图片总量上限经 base64 膨胀加信封余量得出）限制普通图片与 RPC 信封。显式启用的流式路由接收带背压的分块并绕过总量上限；路由实现负责持久化、取消与存储配额。
 - **明文 HTTP 监听器会在传输中暴露 bearer cookie**：此类部署无法给浏览器 cookie 加 `Secure`；若把同一 authority 暴露到网络上，会话 cookie 可能泄露；在 Web 载体（[`dsh-host-webserver`](../../host/webserver/README.zh.md)）上配置 TLS 即可让 cookie 带上 `Secure` 并只经 TLS 发送。
 - **未使用的 API Peer 可以保留到 Host 退出**：调用方从未建立 WebSocket 时，其轻量记录不受建联期限或空闲回收约束。Cookie 过期仍拒绝新请求。其生命周期 socket 关闭或 Host 重启后，API 调用方必须通过 `/connect` 重新接入。
+- **外部 Peer 不会随 WebSocket 关闭而释放**：经 `externalPeerAdmission` 创建的 Peer 会保留到 `disposeExternalPeer(key)` 或 Host 退出，因为 socket 共享它而不占用它。
 - **没有 logout 操作**：清除浏览器 cookie 会结束单个浏览器会话；删除 owner 凭据记录并重启 `dsh` 会撤销全部会话。
 
 

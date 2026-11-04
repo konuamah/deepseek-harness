@@ -15,6 +15,7 @@ import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
 import { Peer } from './peer.ts'
+import type { ExternalAdmission } from './external-admission.ts'
 import type {
   PeerAdmission,
   ConnectionAdmission,
@@ -71,6 +72,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** The Peer every authenticated browser connection shares. */
   readonly browserPeer: PeerScope
   private readonly peers = new Map<PeerId, PeerRecord>()
+  private readonly externalPeers = new Map<string, { readonly peer: Peer; readonly principal: Principal }>()
   private readonly owner: Context
   private disposed = false
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
@@ -94,8 +96,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
     this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
     ctx.effect(() => async () => {
       this.disposed = true
-      const peers = [this.browserPeer, ...Array.from(this.peers.values(), record => record.peer)]
+      const peers = [
+        this.browserPeer,
+        ...Array.from(this.peers.values(), record => record.peer),
+        ...Array.from(this.externalPeers.values(), record => record.peer),
+      ]
       this.peers.clear()
+      this.externalPeers.clear()
       await Promise.all(peers.map(peer => peer.dispose()))
     }, 'client-connection: Peer scopes')
     this.allowsRemoteAuthorities = trustedHosts.some(isRemoteAuthority)
@@ -134,6 +141,63 @@ export class HostConnectionService extends Service implements HostConnectionHand
     const id = this.browserAuth.authenticateApi(request, secure)
     const record = id === undefined ? undefined : this.peers.get(id)
     return record === undefined ? { rejection: 401 } : { peer: record.peer }
+  }
+
+  /**
+   * Admit an owner or API request; when the owner path refuses a request that passed the Host/Origin
+   * fence, ask the external provider (if one is provided) for a non-owner Peer.
+   * @param request - request headers from the HTTP or upgrade request.
+   * @returns the owner or external Peer, or the rejection status.
+   */
+  async admitAsync(request: ConnectionTrustRequest): Promise<PeerAdmission> {
+    const admission = this.admit(request)
+    if (!('rejection' in admission) || admission.rejection !== 401 || this.disposed) return admission
+    const provider = this.owner.get('externalPeerAdmission')
+    if (provider === undefined) return admission
+    let decision: ExternalAdmission
+    try {
+      decision = await provider.admit(providerHeaders(request.headers))
+    } catch {
+      // Provider failures are denials; the provider owns its own diagnostics.
+      return { rejection: 401 }
+    }
+    // The owner principal is reserved for the owner paths; a provider cannot mint it.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
+    if (decision.kind !== 'allow' || decision.principal.kind === 'owner' || this.disposed) return { rejection: 401 }
+    return { peer: this.externalPeer(decision.key, decision.principal) }
+  }
+
+  /**
+   * Socket admission for the Gateway upgrade: owner sockets claim ownership; external Peers are shared and not claimed.
+   * @param request - authenticated upgrade request headers.
+   * @returns the Peer with an idempotent release, or a rejection status.
+   */
+  async admitConnectionAsync(request: ConnectionTrustRequest): Promise<ConnectionAdmission> {
+    const claimed = this.admitConnection(request)
+    if (!('rejection' in claimed) || claimed.rejection !== 401) return claimed
+    const admission = await this.admitAsync(request)
+    if ('rejection' in admission) return admission
+    return { peer: admission.peer, release: () => Promise.resolve() }
+  }
+
+  /**
+   * Dispose and forget the external Peer for one key; its signal aborts so its sockets close. Absent keys are a no-op.
+   * @param key - the key the external provider returned for that Peer.
+   */
+  disposeExternalPeer(key: string): void {
+    const record = this.externalPeers.get(key)
+    if (record === undefined) return
+    this.externalPeers.delete(key)
+    void record.peer.dispose()
+  }
+
+  private externalPeer(key: string, principal: Principal): PeerScope {
+    const existing = this.externalPeers.get(key)
+    if (existing !== undefined && JSON.stringify(existing.principal) === JSON.stringify(principal)) return existing.peer
+    if (existing !== undefined) void existing.peer.dispose()
+    const peer = new Peer(this.owner, { principal })
+    this.externalPeers.set(key, { peer, principal })
+    return peer
   }
 
   /** Create one in-process Peer owned by the Context that read this service. */
@@ -261,7 +325,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        const admission = this.admit(req)
+        const admission = await this.admitAsync(req)
         if ('rejection' in admission) {
           res.writeHead(admission.rejection)
           res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
@@ -390,6 +454,11 @@ function fullResponse(rpcId: RpcIdType, result: Awaited<ReturnType<ConnectionRpc
   })
   parts.set('metadata', JSON.stringify({ ...body, attachments: attachmentMetadata }))
   return new Response(parts)
+}
+
+function providerHeaders(headers: ConnectionTrustRequest['headers']): Record<string, string | string[] | undefined> {
+  if (headers instanceof Headers) return Object.fromEntries(headers)
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, typeof value === 'string' || value === undefined ? value : [...value]]))
 }
 
 function assertChannel(channel: string): void {

@@ -5,6 +5,8 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-ai-confirm
 
+English | [中文](README.zh.md)
+
 ## Summary
 
 `dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, and `prepare_request_documents` tools as a confirm card. The card loads the prepared batch and each application's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. The model sees only the tool result and never a name, a token, or a write outcome.
@@ -115,7 +117,6 @@ None. The package never edits earlier request tokens.
 - **Same origin only** — the card relies on the staff session cookie and a reverse proxy; there is no cross-origin mode.
 - **The tool service keeps batches in memory for 15 minutes** — a tool service restart makes the card report an expired batch, and the model must prepare it again.
 - **Not covered by the browser smoke or replayed end-to-end suites** — the package has unit, component, and plugin-registration specs at 100% coverage, but no `test:web` scenario.
-- **English-only documentation** — the bilingual README and Agent Note triplets the upstream documentation gates expect are not provided.
 
 <a id="dev-note"></a>
 ### Dev Note

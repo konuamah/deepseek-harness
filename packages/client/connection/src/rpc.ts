@@ -240,6 +240,28 @@ export interface HostConnectionHandle {
   admit(request: ConnectionTrustRequest): PeerAdmission
 
   /**
+   * Admit a request like {@link admit}, then ask the external Peer provider when
+   * the owner path refuses a request that passed the Host/Origin fence.
+   * @param request - request headers from the HTTP or upgrade request.
+   * @returns the owner or external Peer, or the rejection status.
+   */
+  admitAsync(request: ConnectionTrustRequest): Promise<PeerAdmission>
+
+  /**
+   * Claim a physical socket like {@link admitConnection}, with external Peer admission
+   * as a fallback. External Peers are shared by key and are not claimed.
+   * @param request - authenticated upgrade request headers.
+   * @returns the Peer with an idempotent release, or a rejection status.
+   */
+  admitConnectionAsync(request: ConnectionTrustRequest): Promise<ConnectionAdmission>
+
+  /**
+   * Dispose and forget the external Peer for one key; its signal aborts so its sockets close.
+   * @param key - the key the external provider returned for that Peer.
+   */
+  disposeExternalPeer(key: string): void
+
+  /**
    * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
    * @param options - fixed principal and optional interaction participation (default `answer`).
    * @returns a new Peer distinct from every other Peer.
