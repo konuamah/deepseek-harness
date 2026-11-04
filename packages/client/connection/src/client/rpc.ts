@@ -29,9 +29,14 @@ export type RpcStreamOpen = (
  * Create the browser-backed generic RPC caller.
  * @param doFetch - transport override; defaults to the page's global fetch.
  * @param openStream - optional worker-local Gateway stream carrier.
+ * @param onUnauthorized - called when a unary request answers HTTP 401, before the failure is thrown.
  * @returns caller that owns request correlation and response-envelope validation.
  */
-export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStreamOpen): ClientConnectionRpc {
+export function createWebConnectionRpc(
+  doFetch?: RpcFetch,
+  openStream?: RpcStreamOpen,
+  onUnauthorized?: () => void,
+): ClientConnectionRpc {
   const send: RpcFetch = doFetch ?? ((input, init) => globalThis.fetch(input, init))
   return {
     async call(channel, endpoint, payload, signal) {
@@ -56,6 +61,7 @@ export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStrea
         },
       )
       if (!response.ok) {
+        if (response.status === 401) onUnauthorized?.()
         throw new Error(`transport failure for ${channel}/${endpoint}: HTTP ${response.status}`)
       }
       const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()

@@ -11,6 +11,7 @@
     "src/client/connection.ts",
     "src/client/index.ts",
     "src/client/random-uuid.ts",
+    "src/client/staff-login.ts",
     "src/client/rpc.ts",
     "src/client/socket.ts",
     "src/connect-protocol.ts",

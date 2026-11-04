@@ -9,6 +9,9 @@ import {
   type ConnectionState,
 } from './connection.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
+import {
+  createStaffLogin, readStaffLoginUrl, STAFF_PROBE_PATH, type StaffLoginLocation,
+} from './staff-login.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 import { resolveConnectionConfig } from '../recovery-config.ts'
@@ -140,6 +143,8 @@ export interface ConnectionInstallOptions {
   readonly recovery?: ConnectionRecoveryConfig
   /** Page location; omit for a non-browser composition. */
   readonly location?: ConnectionLocation
+  /** Staff-mode redirect target and page location; omit when the Host did not inject a login URL. */
+  readonly staffLogin?: { readonly loginUrl: string; readonly location: StaffLoginLocation }
 }
 
 /**
@@ -230,7 +235,13 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
   const transport = options.transport
   const recovery = options.recovery ?? {}
   const interactions = options.interactions ?? (pageLocation === undefined ? 'none' : 'answer')
-  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
+  const staffLogin = options.staffLogin === undefined ? undefined : createStaffLogin({
+    loginUrl: options.staffLogin.loginUrl,
+    location: options.staffLogin.location,
+    probe: () => globalThis.fetch(STAFF_PROBE_PATH, { method: 'GET', credentials: 'same-origin' })
+      .then(response => response.status),
+  })
+  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream, staffLogin?.unauthorized)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0
@@ -270,7 +281,11 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
   }
   const handle: ConnectionHandle = {
     interactions,
-    openWebSocket: path => openConnectionWebSocket(path, transport?.createWebSocket, transport?.streamBaseUrl),
+    openWebSocket: (path) => {
+      const socket = openConnectionWebSocket(path, transport?.createWebSocket, transport?.streamBaseUrl)
+      staffLogin?.watchSocket(socket)
+      return socket
+    },
     isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
     generation: {
       getSnapshot: () => generation,
@@ -344,9 +359,11 @@ export function apply(ctx: Context): void {
   const globals = globalThis as ClientTransportGlobal
   const pageLocation = typeof location === 'undefined' ? undefined : location
   const transport = globals.__DSH_TRANSPORT__
+  const loginUrl = readStaffLoginUrl(typeof document === 'undefined' ? undefined : document)
   installConnection(ctx, {
     ...(transport === undefined ? {} : { transport }),
     recovery: resolveConnectionConfig(globals.__DSH_CONNECTION_RECOVERY__),
     ...(pageLocation === undefined ? {} : { location: pageLocation }),
+    ...(loginUrl === undefined || pageLocation === undefined ? {} : { staffLogin: { loginUrl, location: pageLocation } }),
   })
 }

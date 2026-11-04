@@ -33,8 +33,9 @@ afterEach(async () => {
 /**
  * Write a dist fixture and the authenticated Web rows, then boot them through the real Loader.
  * An external provider, when given, is provided on the root context before the rows boot.
+ * A loginUrl, when given, is written into the frontend-static config.
  */
-async function loadComposition(external?: Connection.ExternalPeerAdmission): Promise<Context> {
+async function loadComposition(external?: Connection.ExternalPeerAdmission, loginUrl?: string): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -61,6 +62,7 @@ async function loadComposition(external?: Connection.ExternalPeerAdmission): Pro
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
     '  config:',
     `    distIndex: '${distIndex}'`,
+    ...(loginUrl === undefined ? [] : [`    loginUrl: '${loginUrl}'`]),
     '',
   ].join('\n'))
 
@@ -420,6 +422,25 @@ describe('external Peer index admission', () => {
       body: 'dsh web authentication required; reopen the URL printed by dsh web.\n',
     })
     expect(attempts).toBe(0)
+  })
+
+  it('renders the login URL meta element only when an external Peer provider is composed', { timeout: 60_000 }, async () => {
+    const page = '<head></head><body></body>'
+    const withProvider = await loadComposition(provider)
+    const rendered = withProvider.webServer.renderIndex(page, withProvider.connection.browserPeer)
+    expect(rendered).toContain('<meta name="dsh-staff-login-url" content="/login">')
+    await withProvider.fiber.dispose()
+    context = undefined
+
+    const ownerOnly = await loadComposition()
+    expect(ownerOnly.webServer.renderIndex(page, ownerOnly.connection.browserPeer)).not.toContain('dsh-staff-login-url')
+  })
+
+  it('renders a configured loginUrl as the login URL meta content', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition(provider, '/signin')
+    const rendered = loaded.webServer.renderIndex('<head></head><body></body>', loaded.connection.browserPeer)
+    expect(rendered).toContain('<meta name="dsh-staff-login-url" content="/signin">')
+    expect(rendered).not.toContain('content="/login"')
   })
 
   it('rejects a loginUrl that is not a same-origin absolute path', () => {

@@ -54,6 +54,8 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 
 通过认证的共享 HTTP 请求在传输请求体之前经过 `connection/request` waterfall。监听器可以拒绝新请求，或等待 `next()` 直到响应完成；释放所属 fiber 会移除准入行为。Desktop 使用此扩展点，在已批准的安装期间锁住新的 API 工作，而不取消已接纳的工作。客户端断开会中止处理函数的信号；桥接器停止写入 socket，并排空剩余响应块。WebSocket 流仍由 API Gateway 负责。
 
+当 Host 注入 `dsh-staff-login-url`（staff 模式）时，Client 每个页面加载最多把页面导航到 `loginUrl?next=<pathname+search>` 一次。导航由以下情况触发：一元 `/api` 请求返回 401；或 WebSocket 触发 `error` 或 `close`，且随后的 `GET /api/` 探测返回 401。5xx 状态与网络错误从不导航。登录地址不携带 cookie 或令牌。探测不执行任何 RPC，因为 `/api` 前缀在路由之前即被放行。
+
 <a id="connection-generation"></a>
 ## Connection generation
 

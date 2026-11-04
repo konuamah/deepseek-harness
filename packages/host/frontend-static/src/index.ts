@@ -9,7 +9,9 @@
  * for the Peer its caller admitted. When an external Peer provider is composed
  * and browser authentication refuses an HTTP index request, the provider may
  * admit a staff Peer (rendered with `cache-control: no-store`); a refusal
- * redirects to `loginUrl` with the requested path and query in `next`.
+ * redirects to `loginUrl` with the requested path and query in `next`. A
+ * staff-Peer-capable index carries the `dsh-staff-login-url` meta element with
+ * the login URL.
  * Both renders go through the webserver's
  * index render (structured injection rows, then raw taps). Non-index assets
  * stay public; every file other than the index carries a weak ETag with
@@ -144,6 +146,15 @@ async function serveStatic(
 }
 
 /**
+ * Escape a value for a double-quoted HTML attribute.
+ * @param value - the raw attribute value.
+ * @returns the value with `&`, `"`, `<` and `>` replaced by character references.
+ */
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
  * Claim the webserver fallback seat with a resource serving the dist.
  * @param ctx - plugin context carrying the webServer and connection services.
  * @param config - validated {@link Config}.
@@ -153,6 +164,18 @@ export function apply(ctx: Context, config: Config): void {
   const distRoot = dirname(distIndex)
   // schemastery's .default() guarantees the field is set after validation.
   const loginUrl = config.loginUrl as string
+  // A staff-Peer-capable index carries the login URL so the client can redirect
+  // a lost staff session; owner-only deployments keep the index unchanged.
+  ctx.inject(['webServer'], (webCtx) => {
+    webCtx.on('webserver/index-inject', (table) => {
+      if (ctx.get('externalPeerAdmission') === undefined) return
+      table.push({
+        kind: 'html',
+        placement: 'head',
+        html: `<meta name="dsh-staff-login-url" content="${escapeAttribute(loginUrl)}">`,
+      })
+    })
+  })
   // Connection's browser authentication writes the token exchange's 303 or
   // the 401 through a writeHead/end response; capture it as a Fetch response.
   // The answer stays a 401 unless Connection writes another one.

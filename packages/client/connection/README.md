@@ -54,6 +54,8 @@ Only API callers use `GET /connect?token=...&interactions=answer|none`: it immed
 
 Authenticated shared HTTP requests pass through the `connection/request` waterfall before body transfer. A listener may refuse new requests or await `next()` through response completion; removing its owning fiber removes admission behavior. Desktop uses this hook to lock new API work during an approved installation without canceling already-admitted work. Client disconnection aborts the handler signal; the bridge stops socket writes and drains any remaining response chunks. WebSocket stream ownership remains with API Gateway.
 
+When the Host injects `dsh-staff-login-url` (staff mode), the Client navigates the page to `loginUrl?next=<pathname+search>` at most once per page load. Navigation starts when a unary `/api` request answers 401, or when a WebSocket fires `error` or `close` and a follow-up `GET /api/` probe answers 401. A 5xx status or a network error never navigates. The login URL carries no cookies or tokens. The probe runs no RPC, because the `/api` prefix is admitted before routing.
+
 <a id="connection-generation"></a>
 ## Connection generation
 
