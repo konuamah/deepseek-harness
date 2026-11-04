@@ -37,14 +37,14 @@ describe('staff access plugin configuration', () => {
     const ctx = await setup()
     const missing = {} as StaffAccess.Config
     expect(() => { StaffAccess.apply(ctx, missing) }).toThrow('staff-access: ownersFile is required')
-    expect(() => { StaffAccess.apply(ctx, { ownersFile: '' }) }).toThrow('staff-access: ownersFile is required')
+    expect(() => { StaffAccess.apply(ctx, { ownersFile: '', djangoBaseUrl: 'https://django.test' }) }).toThrow('staff-access: ownersFile is required')
   })
 })
 
 describe('staff access plugin mount', () => {
   it('provides the owner index and registers the staff policy', async () => {
     const ctx = await setup()
-    await ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json') })
+    await ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json'), djangoBaseUrl: 'https://django.test' })
     ctx.staffSessions.owners.record(SessionId('s1'), 1)
     expect(ctx.staffSessions.owners.ownerOf(SessionId('s1'))).toBe(1)
     expect(ctx.remoteAccess.decide({ principal: STAFF, action: 'session/list', resources: [GLOBAL] })).toEqual({ kind: 'allow' })
@@ -52,7 +52,7 @@ describe('staff access plugin mount', () => {
 
   it('removes the staff policy when the plugin fiber is disposed', async () => {
     const ctx = await setup()
-    const fiber = ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json') })
+    const fiber = ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json'), djangoBaseUrl: 'https://django.test' })
     await fiber
     expect(ctx.remoteAccess.decide({ principal: STAFF, action: 'session/list', resources: [GLOBAL] })).toEqual({ kind: 'allow' })
     await fiber.dispose()

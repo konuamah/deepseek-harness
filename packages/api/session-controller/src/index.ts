@@ -12,7 +12,7 @@ import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativ
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
-import { Remote, RemoteError, TypertRemoteService, principalOf, type TypertResourceResolveInput } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService, principalOf, type Principal, type TypertResourceResolveInput } from '@deepseek-ai/dsh-typert-protocol'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
@@ -40,6 +40,7 @@ import type {
   SessionCancelRequest,
   SessionCancelValue,
   SessionControlFrame,
+  SessionCreateCall,
   SessionCreateRequest,
   SessionCreateValue,
   SessionFollowFrame,
@@ -75,6 +76,26 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host Session business API and Remote namespace owner. */
     sessionController: SessionController
+  }
+
+  interface Events {
+    /**
+     * Admit or reject one create request before any Session is created. A
+     * listener may reassign `request` or narrow `reusable` on `call`, or reject
+     * by throwing; it MUST call `next()` to keep the create going.
+     * @mode waterfall
+     * @param call - the create request, its non-owner caller, and the reuse filter.
+     * @param next - delegate to the remaining listeners and the built-in create.
+     */
+    'api-session/create-request'(call: SessionCreateCall, next: () => Promise<void>): Promise<void>
+    /**
+     * A Session was created or reused for a create request, before the create
+     * returns. A rejection fails the create and disposes the created Session.
+     * @mode parallel
+     * @param sessionId - the Session the create returns.
+     * @param principal - non-owner caller of the create, or undefined for the owner.
+     */
+    'api-session/created'(sessionId: SessionId, principal: Principal | undefined): Promise<void> | void
   }
 }
 
@@ -302,7 +323,7 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('create')
   create(request: SessionCreateRequest): Promise<SessionCreateValue> {
-    return this.commands.create(request)
+    return this.commands.create(request, principalOf(this.ctx.invocation))
   }
 
   /**

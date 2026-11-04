@@ -116,7 +116,13 @@ export function createDjangoStaffAuthenticator(options: DjangoStaffAuthenticator
   }
 }
 
-function findCookie(header: string | string[] | undefined, name: string): string | undefined {
+/**
+ * Read one cookie value from request headers.
+ * @param header - the Cookie header, as one string or several.
+ * @param name - cookie name to find.
+ * @returns the value, or undefined when the cookie is missing or empty.
+ */
+export function findCookie(header: string | string[] | undefined, name: string): string | undefined {
   const raw = Array.isArray(header) ? header.join('; ') : header
   if (!raw) return undefined
   for (const piece of raw.split(';')) {

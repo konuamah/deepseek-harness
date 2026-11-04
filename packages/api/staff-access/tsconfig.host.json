@@ -6,7 +6,9 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/create-admission.ts",
     "src/django-authenticator.ts",
+    "src/external-admission.ts",
     "src/index.ts",
     "src/owner-index.ts",
     "src/plugin.ts",
@@ -17,6 +19,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../core/session" },
-    { "path": "../remote-access/tsconfig.host.json" }
+    { "path": "../remote-access/tsconfig.host.json" },
+    { "path": "../session-controller/tsconfig.host.json" }
   ]
 }

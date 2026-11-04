@@ -21,7 +21,7 @@ import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deeps
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
-import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf, type Principal } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
   ApiSessionAgentController,
@@ -37,6 +37,7 @@ import type {
   SessionAttachmentValue,
   SessionCancelRequest,
   SessionCancelValue,
+  SessionCreateCall,
   SessionCreateRequest,
   SessionCreateValue,
   SessionForkRequest,
@@ -100,7 +101,10 @@ export class SessionCommandController {
    * @param request - optional blank Session to reuse, location, and Agent preset.
    * @returns the created or reused Session identity and its preset when configured.
    */
-  async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
+  async create(input: SessionCreateRequest, principal?: Principal): Promise<SessionCreateValue> {
+    const call: SessionCreateCall = { request: input, principal, reusable: () => true }
+    await this.ctx.waterfall('api-session/create-request', call, () => Promise.resolve())
+    const request = call.request
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
@@ -121,12 +125,23 @@ export class SessionCommandController {
         cwd,
         ...(request.agentPreset === undefined ? {} : { agentPreset: request.agentPreset }),
         reusable: sessionId => !this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)
-          && (workspace === undefined || workspace.sessionIds.includes(sessionId)),
+          && (workspace === undefined || workspace.sessionIds.includes(sessionId))
+          && call.reusable(sessionId),
       })
     } catch (error) {
       this.rejectCreation(error)
     }
     const sessionId = created.agent.id
+    try {
+      await this.ctx.parallel('api-session/created', sessionId, call.principal)
+    } catch (error) {
+      await this.agents.disposeCreated(created.agent)
+      throw new RemoteError(
+        'gateway/internal',
+        `session "${sessionId}" was not kept because a create listener failed: ${String(error)}`,
+        { sessionId },
+      )
+    }
     if (workspace !== undefined) {
       try {
         await workspace.attachSession(sessionId)

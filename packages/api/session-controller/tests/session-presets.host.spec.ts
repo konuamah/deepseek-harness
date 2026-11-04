@@ -10,9 +10,11 @@ import type { Agent, AgentFactory } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, type PeerId, type Principal, type RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type SessionController from '../src/index.ts'
+import type { SessionCreateValue } from '../src/types.ts'
 import { createSessionTestRemote, testSessionPersistence } from './test-remote.ts'
 
 /** Booted contexts and their temp roots, torn down after each test. */
@@ -675,5 +677,77 @@ describe('session.create Workspace placement', () => {
     expect(created.value.sessionId).not.toBe('placed-draft')
     expect(selections).toEqual([])
     expect(presetOf(draft)).toBe('minimal')
+  })
+})
+
+/** Invoke `session.create` as `principal`: the Context a Gateway dispatch binds for that caller. */
+function createAs(
+  ctx: Context,
+  principal: Principal | undefined,
+  request: { readonly sessionId?: SessionId; readonly agentPreset?: string },
+): Promise<SessionCreateValue> {
+  const invocation: RemoteInvocation = {
+    request: { namespace: 'session', method: 'create', args: {} },
+    service: 'sessionController',
+    peer: { id: 'create-peer' as PeerId, ctx, principal: principal ?? { kind: 'owner' }, interactions: 'answer', signal: new AbortController().signal, dispose: async () => {} },
+    signal: new AbortController().signal,
+    uplink: <In>(): AsyncIterable<In> => ({ [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }) }),
+  }
+  const controller: SessionController = ctx.extend({ invocation }).sessionController
+  return controller.create(request)
+}
+
+describe('session.create admission events', () => {
+  it('lets a listener rewrite the preset and the reuse filter before the create', async () => {
+    const { ctx, presetOf } = await harness({ presets: ['standard', 'minimal'] })
+    ctx.on('api-session/create-request', async (call, next) => {
+      call.request = { agentPreset: 'minimal' }
+      call.reusable = () => false
+      return next()
+    })
+
+    const created = await createAs(ctx, undefined, { agentPreset: 'standard' })
+
+    expect(created.agentPreset).toBe('minimal')
+    expect(presetOf(created.sessionId)).toBe('minimal')
+  })
+
+  it('fails the create without a Session when a listener rejects it', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    ctx.on('api-session/create-request', () => {
+      throw new RemoteError('gateway/bad-request', 'rejected by listener', {})
+    })
+
+    await expect(createAs(ctx, undefined, { sessionId: SessionId('refused') })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect(ctx.sessions.get(SessionId('refused'))).toBeUndefined()
+  })
+
+  it('passes the non-owner caller to the created event and the owner as undefined', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    const seen: { sessionId: SessionId; principal: Principal | undefined }[] = []
+    ctx.on('api-session/created', (sessionId, principal) => { seen.push({ sessionId, principal }) })
+    const staff: Principal = { kind: 'test-guest', guest: 'session-controller' }
+
+    const forStaff = await createAs(ctx, staff, {})
+    const forOwner = await createAs(ctx, undefined, {})
+
+    expect(seen).toEqual([
+      { sessionId: forStaff.sessionId, principal: staff },
+      { sessionId: forOwner.sessionId, principal: undefined },
+    ])
+  })
+
+  it('disposes the created Session when a created listener fails, and fails the create', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    let createdId: SessionId | undefined
+    ctx.on('api-session/created', (sessionId) => {
+      createdId = sessionId
+      throw new Error('owner record refused')
+    })
+
+    await expect(createAs(ctx, undefined, {})).rejects.toMatchObject({ code: 'gateway/internal' })
+    expect(createdId).toBeDefined()
+    expect(ctx.sessions.get(createdId!)).toBeUndefined()
+    expect(ctx.agents.get(createdId!)).toBeUndefined()
   })
 })

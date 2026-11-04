@@ -273,6 +273,16 @@ export interface SessionCreateRequest {
   readonly agentPreset?: string
 }
 
+/** One create request as the `api-session/create-request` listeners see it. */
+export interface SessionCreateCall {
+  /** Request the create runs; a listener replaces it before calling `next()`. */
+  request: SessionCreateRequest
+  /** Non-owner caller of the Remote call; undefined for the owner. */
+  readonly principal: Principal | undefined
+  /** Blank-Session reuse filter; a listener narrows it before calling `next()`. */
+  reusable: (sessionId: SessionId) => boolean
+}
+
 /** Session creation response value. */
 export interface SessionCreateValue {
   /** The created or reused Session, which may differ from the requested `sessionId`. */
