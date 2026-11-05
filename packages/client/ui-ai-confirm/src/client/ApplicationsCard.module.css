@@ -1,0 +1,53 @@
+/* AI applications card: a bordered compact table, with one note line while names load or when they could not. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  font-size: calc(13px + var(--dsh-content-font-delta, 0px));
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: start;
+}
+
+.table th,
+.table td {
+  padding: 4px 12px 4px 0;
+  vertical-align: baseline;
+  text-align: start;
+}
+
+.table th {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: calc(12px + var(--dsh-content-font-delta, 0px));
+  font-weight: 500;
+}
+
+.name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+}

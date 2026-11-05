@@ -291,7 +291,7 @@ describe('createConfirmStore', () => {
   it('starts empty and keeps one entry per batch', () => {
     const store = newStore()
 
-    expect(store.getSnapshot()).toEqual({ cards: {} })
+    expect(store.getSnapshot()).toEqual({ cards: {}, lists: {} })
     store.actions.begin('a')
     store.actions.begin('b')
     store.actions.editReason('a', 'x')
@@ -307,6 +307,6 @@ describe('createConfirmStore', () => {
 
     first.actions.begin('a')
 
-    expect(second.getSnapshot()).toEqual({ cards: {} })
+    expect(second.getSnapshot()).toEqual({ cards: {}, lists: {} })
   })
 })

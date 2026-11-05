@@ -34,7 +34,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject` 和 `..._prepare_request_documents`。 |
+| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject` 和 `..._prepare_request_documents`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
 | `toolsPath` | `/tools/pending` | 反向代理转发到工具服务待处理批次路由的页面路径。 |
 | `apiPath` | `/api/v1` | 反向代理转发到 Django API 的页面路径。 |
 | `signInUrl` | `/login` | 使用账号、密码和双因素认证登录员工的页面。在新标签页中打开。 |
@@ -48,6 +48,12 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 已准备的批次会显示每条记录的姓名、编号、项目，以及每条记录将获得的变更（例如"Under review → Approved"）。工具服务跳过的记录会列出其原因。拒绝和请求材料的操作会显示一个原因字段，初始内容为 AI 的草稿。请求材料时，原因为空则无法确认。
 
 确认按以下顺序执行：检查登录状态并铸造写入令牌，使用掉该批次，然后一次写入一条记录。每条记录都有自己的结果（已变更，或 Django 拒绝的原因）。取消会使用掉该批次但不写入。已过期、已使用或无法加载的批次会说明原因，并显示每位申请人的当前状态。
+
+### 申请列表卡片
+
+`list_applications` 和 `get_application` 的结果会显示为紧凑的表格，包含姓名、编号、状态和专业。工具服务从不返回姓名，因此浏览器使用员工本人的会话，从 `apiPath` 下仅限员工使用的申请摘要接口取得姓名并填入。卡片只读取该响应中每条记录的 id 和姓名，每次调用只请求一次（最多 25 个 id），姓名只保存在卡片的内存 store 中。看起来像电子邮件地址的姓名不会显示。
+
+卡片会柔性降级。姓名加载期间，各行不带姓名显示。如果无法加载姓名（未登录、已过期、不可用），表格仍保留编号、状态和专业，并增加一行提示，附带"重试"按钮。结果不是格式正确的申请列表，或为错误时，不渲染任何内容。
 
 ### 代理要求
 
@@ -63,7 +69,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 ### Registration
 
-`apply` 注册一对词典（`zh`、`en`）以及每个 prepare 工具一个 `tool.call.toolview` 条目，所有条目共享一个已声明的 Session store。每个条目的 `inject` 面携带网络面、它所代表的操作以及登录路径。该包只导出 `apply`、`inject` 和 `Config`。
+`apply` 注册一对词典（`zh`、`en`）以及每个 prepare 工具和每个只读工具一个 `tool.call.toolview` 条目，所有条目共享一个已声明的 Session store。每个条目的 `inject` 面携带网络面、它所代表的操作以及登录路径。该包只导出 `apply`、`inject` 和 `Config`。
 
 ### Flow
 
@@ -71,7 +77,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 ### State
 
-store 按工具服务的待处理操作 id 保存每个批次的阶段、正在编辑的原因、已加载的姓名以及每次写入的结果。卡片在确认过程中重新挂载时仍会显示进度，且确认会继续运行，因为流程由控制器持有，而非组件。结果不写入 Session 日志：重新加载后，卡片会从 Django 读回每位申请人的当前状态。
+store 按工具服务的待处理操作 id 保存每个批次的阶段、正在编辑的原因、已加载的姓名以及每次写入的结果。卡片在确认过程中重新挂载时仍会显示进度，且确认会继续运行，因为流程由控制器持有，而非组件。结果不写入 Session 日志：重新加载后，卡片会从 Django 读回每位申请人的当前状态。申请列表卡片的姓名保存在同一个 store 中，以日志中的调用 id 为键。
 
 ### Replay
 

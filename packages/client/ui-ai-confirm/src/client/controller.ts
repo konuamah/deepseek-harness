@@ -103,3 +103,26 @@ export async function cancelCard(api: ConfirmApi, sink: CardSink, batch: Prepare
     sink.failed(key, kindOf(error))
   }
 }
+
+/**
+ * Load the names for a read card's applications, once per call. Any failure leaves the card
+ * without names (the card says so); a name that looks like an email address is dropped, because
+ * the staff call falls back to the login email when an account has no name.
+ * @param api - the network faces.
+ * @param sink - the store's state changes.
+ * @param key - the logged call's id.
+ * @param ids - the application ids to name, at most 25.
+ * @returns once the list is loaded or failed.
+ */
+export async function openList(api: ConfirmApi, sink: CardSink, key: string, ids: readonly number[]): Promise<void> {
+  sink.listBegin(key)
+  try {
+    const names: Record<number, string> = {}
+    for (const { id, name } of await api.loadSummaries(ids)) {
+      if (name.trim() !== '' && !name.includes('@')) names[id] = name
+    }
+    sink.listLoaded(key, names)
+  } catch {
+    sink.listFailed(key)
+  }
+}

@@ -15,11 +15,14 @@
   en: d152484eb41ac6b4
   zh: d152484eb41ac6b4
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package:
-  en: f2b001e1b7848a8c
-  zh: ccfcb5c4ecfe6b78
+  en: 1d4af40bb078486f
+  zh: 8fa1f4f1efe34466
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/what-staff-see:
   en: 1cce642868c0bf45
   zh: 894a5723d23e53a8
+/deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/applications-cards:
+  en: 77a9f41274d787f0
+  zh: 1fc5a79435aa35d8
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/proxy-requirements:
   en: 58130e3fe2588719
   zh: f9920316abfaa86f
@@ -27,14 +30,14 @@
   en: 42b15ac6321706aa
   zh: 42b15ac6321706aa
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/registration:
-  en: c20bd28061ac1721
-  zh: 276100f583c50de0
+  en: 0580adf90c1522a2
+  zh: 89de043f11cae7fa
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/flow:
   en: 9b14e6dfd941de16
   zh: 12b4ade9a2cd8750
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/state:
-  en: 695ad07eb076372d
-  zh: ca0672012e73c1c6
+  en: 17906b1d27d357e2
+  zh: 0df86d09f4588863
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/replay:
   en: 9ca5fb288493aed6
   zh: dd5f67107d94fb3f

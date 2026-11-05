@@ -130,6 +130,55 @@ export function parsePrepared(text: string): PreparedBatch | null {
   return { pendingActionId: value.pendingActionId, action: value.action, eligible, skipped, expiresAt: value.expiresAt }
 }
 
+/** The tools whose results list applications; the read cards register for these. */
+export const READ_TOOLS = ['list_applications', 'get_application'] as const
+
+/**
+ * The wire name of a read tool: `mcp__<serverName>__<tool>`.
+ * @param serverName - the `serverName` of the MCP entry that connects the tool service.
+ * @param tool - the read tool.
+ * @returns the key to register the card under.
+ */
+export function readWireName(serverName: string, tool: (typeof READ_TOOLS)[number]): string {
+  return `mcp__${serverName}__${tool}`
+}
+
+/** One row of a read tool's result. Only these four fixed fields are read; the AI result holds no name. */
+export interface ListedApplication {
+  readonly id: number
+  readonly reference: string
+  readonly status: string
+  readonly program: string
+}
+
+function listedApplication(value: unknown): ListedApplication | null {
+  if (!isRecord(value) || !isId(value.id) || typeof value.reference !== 'string' || typeof value.status !== 'string') {
+    return null
+  }
+  if (!isRecord(value.program) || typeof value.program.name !== 'string') return null
+  return { id: value.id, reference: value.reference, status: value.status, program: value.program.name }
+}
+
+/**
+ * Read the applications out of `list_applications` (an `applications` array) or `get_application`
+ * (one application at the top level). Wire data: anything malformed, empty or too long yields null.
+ * @param text - the tool result's text content.
+ * @returns the applications, or null.
+ */
+export function parseApplications(text: string): readonly ListedApplication[] | null {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!isRecord(value)) return null
+  const items = Array.isArray(value.applications) ? value.applications : [value]
+  if (items.length === 0 || items.length > BATCH_LIMIT) return null
+  const rows = items.map(listedApplication)
+  return rows.every((row): row is ListedApplication => row !== null) ? rows : null
+}
+
 /** Application statuses the card has a label for. */
 const STATUS_KEYS = {
   DRAFT: 'status.draft',

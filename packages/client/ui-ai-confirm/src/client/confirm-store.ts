@@ -27,9 +27,16 @@ export interface CardState {
   readonly results: Readonly<Record<number, RecordOutcome>>
 }
 
-/** All cards of one Session, keyed by pending action id. */
+/** Names of one read card's applications: loading, loaded (id to name), or failed (shown without names). */
+export interface ListState {
+  readonly phase: 'loading' | 'ready' | 'failed'
+  readonly names: Readonly<Record<number, string>>
+}
+
+/** All cards of one Session: batches keyed by pending action id, application lists keyed by call id. */
 export interface ConfirmState {
   cards: Record<string, CardState>
+  lists: Record<string, ListState>
 }
 
 /** What the controller needs from the store: one method per state change. */
@@ -43,6 +50,9 @@ export interface CardSink {
   recorded(key: string, id: number, outcome: RecordOutcome): void
   finished(key: string): void
   cancelled(key: string): void
+  listBegin(key: string): void
+  listLoaded(key: string, names: Readonly<Record<number, string>>): void
+  listFailed(key: string): void
 }
 
 type ConfirmActions = {
@@ -74,7 +84,7 @@ function update(state: ConfirmState, key: string, change: Partial<CardState>): v
  */
 export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmActions> {
   return defineStore({
-    init: (): ConfirmState => ({ cards: {} }),
+    init: (): ConfirmState => ({ cards: {}, lists: {} }),
     actions: {
       begin: (state, key) => {
         // Reopening keeps what staff typed and any outcomes already recorded.
@@ -110,6 +120,15 @@ export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmAct
       },
       cancelled: (state, key) => {
         update(state, key, { phase: 'cancelled', step: null })
+      },
+      listBegin: (state, key) => {
+        state.lists[key] = { phase: 'loading', names: {} }
+      },
+      listLoaded: (state, key, names) => {
+        state.lists[key] = { phase: 'ready', names }
+      },
+      listFailed: (state, key) => {
+        state.lists[key] = { phase: 'failed', names: {} }
       },
     },
   })

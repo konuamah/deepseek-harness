@@ -20,9 +20,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createConfirmApi } from './api.ts'
 import { createConfirmStore } from './confirm-store.ts'
+import { ApplicationsCard } from './ApplicationsCard.tsx'
 import { ConfirmCard } from './ConfirmCard.tsx'
 import { en, NS, zh, type AiConfirmKey } from './locales.ts'
-import { ACTIONS, wireName } from './model.ts'
+import { ACTIONS, READ_TOOLS, readWireName, wireName } from './model.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -59,7 +60,7 @@ export const Config: z<Partial<Config>, Config> = z.object({
 export const inject = ['slots', 'locale']
 
 /**
- * Client plugin body: register the dictionary and one card per prepare tool.
+ * Client plugin body: register the dictionary and one card per prepare tool and one per read tool.
  * @param ctx - client root context.
  * @param config - deployment settings; defaults when the row passes none.
  */
@@ -82,6 +83,18 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
         inject: () => ({ api, spec, signInUrl: config.signInUrl }),
       },
       ConfirmCard,
+    ))
+  }
+  for (const tool of READ_TOOLS) {
+    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+      {
+        name: 'tool.call.toolview',
+        key: readWireName(config.serverName, tool),
+        locale: NS,
+        store,
+        inject: () => ({ api }),
+      },
+      ApplicationsCard,
     ))
   }
 }

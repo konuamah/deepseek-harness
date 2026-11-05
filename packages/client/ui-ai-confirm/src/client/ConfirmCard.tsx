@@ -24,7 +24,7 @@ export type ConfirmCardProps = ToolCallViewProps
   & InjectFace<ConfirmInjected>
   & PropsLocale<'aiConfirm'>
 
-type Translate = ConfirmCardProps['t']
+export type Translate = ConfirmCardProps['t']
 
 const TITLES = {
   approve: ['title.approve.one', 'title.approve.other'],
@@ -33,11 +33,11 @@ const TITLES = {
 } as const satisfies Record<ActionSpec['copy'], readonly [AiConfirmKey, AiConfirmKey]>
 
 /** The result's text parts joined; a non-text part carries nothing this card reads. */
-function resultText(block: Extract<ConfirmCardProps, { phase: 'result' }>['block']): string {
+export function resultText(block: Extract<ConfirmCardProps, { phase: 'result' }>['block']): string {
   return block.content.flatMap(part => (part.type === 'text' ? [part.text] : [])).join('\n')
 }
 
-function statusLabel(t: Translate, status: string): string {
+export function statusLabel(t: Translate, status: string): string {
   const key = statusKey(status)
   return key === undefined ? status : t(key)
 }

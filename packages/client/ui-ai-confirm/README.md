@@ -34,7 +34,7 @@ The row ships `disabled: true` in the Web bundle. Turn it on in the profile patc
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, and `..._prepare_request_documents`. |
+| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, and `..._prepare_request_documents`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
 | `toolsPath` | `/tools/pending` | Page path a reverse proxy forwards to the tool service's pending-batch routes. |
 | `apiPath` | `/api/v1` | Page path a reverse proxy forwards to Django's API. |
 | `signInUrl` | `/login` | Page that signs staff in with login and 2FA. Opened in a new tab. |
@@ -48,6 +48,12 @@ All three paths are checked at load: each must be an absolute path on the page's
 A prepared batch shows its records with name, reference, program, and the change each will get (for example, "Under review → Approved"). Records the tool service skipped are listed with its reason. Reject and request-documents show a reason field that starts from the AI's draft. A request for documents cannot be confirmed with an empty reason.
 
 Confirm runs in this order: check the sign-in and mint the write token, use the batch up, then write one record at a time. Each record gets its own outcome (changed, or the reason Django refused). Cancel uses the batch up without writing. A batch that expired, was used, or cannot be loaded explains itself and shows each application's current status.
+
+### Applications cards
+
+The results of `list_applications` and `get_application` show as a compact table with Name, Reference, Status, and Program. The tool service never returns a name, so the browser fills the names in from the staff-only application-summaries call under `apiPath`, with the staff member's own session. The card reads only each record's id and name from that reply, asks once per call (for at most 25 ids), and keeps the names in the card's in-memory store only. A name that looks like an email address is not shown.
+
+The card fails soft. While names load, the rows show without them. If names cannot be loaded (signed out, expired, unavailable), the table keeps its reference, status, and program and adds one line saying so, with a Try again button. A result that is not a well-formed list of applications, or an error, renders nothing.
 
 ### Proxy requirements
 
@@ -63,7 +69,7 @@ The card calls the tool service and Django on the page's own origin, so the staf
 
 ### Registration
 
-`apply` registers one dictionary pair (`zh`, `en`) and one `tool.call.toolview` entry per prepare tool, all sharing one declared Session store. Each entry's `inject` face carries the network faces, the action it stands for, and the sign-in path. The package exports only `apply`, `inject`, and `Config`.
+`apply` registers one dictionary pair (`zh`, `en`) and one `tool.call.toolview` entry per prepare tool and per read tool, all sharing one declared Session store. Each entry's `inject` face carries the network faces, the action it stands for, and the sign-in path. The package exports only `apply`, `inject`, and `Config`.
 
 ### Flow
 
@@ -71,7 +77,7 @@ The card calls the tool service and Django on the page's own origin, so the staf
 
 ### State
 
-The store keeps each batch's phase, the reason being edited, the loaded names, and each write's outcome, keyed by the tool service's pending action id. A card that remounts mid-confirm shows its progress, and the confirm keeps running because the flow is owned by the controller, not the component. Outcomes are not written to the Session log: after a reload the card reads each application's current status back from Django.
+The store keeps each batch's phase, the reason being edited, the loaded names, and each write's outcome, keyed by the tool service's pending action id. The applications cards keep their names in the same store, keyed by the logged call id. A card that remounts mid-confirm shows its progress, and the confirm keeps running because the flow is owned by the controller, not the component. Outcomes are not written to the Session log: after a reload the card reads each application's current status back from Django.
 
 ### Replay
 

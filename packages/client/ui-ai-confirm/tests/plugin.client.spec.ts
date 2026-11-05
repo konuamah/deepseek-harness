@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, Config, inject } from '../src/client/index.ts'
+import { ApplicationsCard } from '../src/client/ApplicationsCard.tsx'
 import { ConfirmCard } from '../src/client/ConfirmCard.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -59,17 +60,23 @@ describe('apply', () => {
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
       'mcp__cinhed__prepare_request_documents',
+      'mcp__cinhed__list_applications',
+      'mcp__cinhed__get_application',
     ])
-    expect(entries.every(entry => entry.component === ConfirmCard && entry.locale === 'aiConfirm')).toBe(true)
+    expect(entries.slice(0, 3).every(entry => entry.component === ConfirmCard)).toBe(true)
+    expect(entries.slice(3).every(entry => entry.component === ApplicationsCard)).toBe(true)
+    expect(entries.every(entry => entry.locale === 'aiConfirm')).toBe(true)
   })
 
   it('follows the configured server name', async () => {
     const { presentation } = await boot({ serverName: 'school_ai' })
 
-    expect(presentation.slots.entries('tool.call.toolview')[0]?.options.key).toBe('mcp__school_ai__prepare_approve')
+    const keys = presentation.slots.entries('tool.call.toolview').map(entry => entry.options.key)
+    expect(keys[0]).toBe('mcp__school_ai__prepare_approve')
+    expect(keys.slice(3)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
   })
 
-  it('shares one store across the three cards', async () => {
+  it('shares one store across all the cards', async () => {
     const { presentation } = await boot({ serverName: 'cinhed' })
 
     const stores = presentation.slots.entries('tool.call.toolview').map(entry => entry.store)
@@ -86,8 +93,9 @@ describe('apply', () => {
       return make()
     })
 
-    expect(injected.map(face => face.spec.tool)).toEqual(['prepare_approve', 'prepare_reject', 'prepare_request_documents'])
-    expect(injected.every(face => face.signInUrl === '/staff/login')).toBe(true)
+    expect(injected.slice(0, 3).map(face => face.spec.tool)).toEqual(['prepare_approve', 'prepare_reject', 'prepare_request_documents'])
+    expect(injected.slice(0, 3).every(face => face.signInUrl === '/staff/login')).toBe(true)
+    expect(typeof injected[3]?.api).toBe('object')
     expect(injected.every(face => typeof (face.api as { claim: unknown }).claim === 'function')).toBe(true)
   })
 
@@ -99,7 +107,7 @@ describe('apply', () => {
 
   it('removes every registration when the plugin is disposed (hot-reload safety)', async () => {
     const { presentation, fiber } = await boot({ serverName: 'cinhed' })
-    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(3)
+    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(5)
 
     await fiber.dispose()
 
@@ -131,6 +139,8 @@ describe('apply', () => {
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
       'mcp__cinhed__prepare_request_documents',
+      'mcp__cinhed__list_applications',
+      'mcp__cinhed__get_application',
     ])
   })
 })
