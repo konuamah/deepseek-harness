@@ -9,9 +9,7 @@ import {
   type ConnectionState,
 } from './connection.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
-import {
-  createStaffLogin, readStaffLoginUrl, STAFF_PROBE_PATH, type StaffLoginLocation,
-} from './staff-login.ts'
+import { readStaffLoginUrl, wireStaffLogin, type StaffLoginLocation } from './staff-login.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 import { resolveConnectionConfig } from '../recovery-config.ts'
@@ -225,6 +223,11 @@ function watchBrowserNetwork(controller: ConnectionController): () => void {
   }
 }
 
+/** Interaction participation when the caller omits it: answer for a page, none otherwise. */
+function resolveInteractions(options: ConnectionInstallOptions): ConnectionInteractions {
+  return options.interactions ?? (options.location === undefined ? 'none' : 'answer')
+}
+
 /**
  * Install one Context-owned Connection service from explicit composition inputs.
  * @param ctx - client Cordis context.
@@ -234,14 +237,9 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
   const pageLocation = options.location
   const transport = options.transport
   const recovery = options.recovery ?? {}
-  const interactions = options.interactions ?? (pageLocation === undefined ? 'none' : 'answer')
-  const staffLogin = options.staffLogin === undefined ? undefined : createStaffLogin({
-    loginUrl: options.staffLogin.loginUrl,
-    location: options.staffLogin.location,
-    probe: () => globalThis.fetch(STAFF_PROBE_PATH, { method: 'GET', credentials: 'same-origin' })
-      .then(response => response.status),
-  })
-  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream, staffLogin?.unauthorized)
+  const interactions = resolveInteractions(options)
+  const staffLogin = wireStaffLogin(options.staffLogin)
+  const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream, staffLogin.unauthorized)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0
@@ -283,7 +281,7 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
     interactions,
     openWebSocket: (path) => {
       const socket = openConnectionWebSocket(path, transport?.createWebSocket, transport?.streamBaseUrl)
-      staffLogin?.watchSocket(socket)
+      staffLogin.watchSocket(socket)
       return socket
     },
     isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),

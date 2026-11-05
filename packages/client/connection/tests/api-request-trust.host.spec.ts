@@ -1,7 +1,7 @@
 /** Behavior of the /api browser-trust fence (rebinding + cross-site defense). */
 
 import { describe, expect, it } from 'vitest'
-import { assertTrustedAuthority, isTrustedApiRequest } from '../src/api-request-trust.ts'
+import { assertTrustedAuthority, isTrustedApiRequest, isTrustedNavigationRequest } from '../src/api-request-trust.ts'
 
 function request(headers: Record<string, string | undefined>): { headers: Record<string, string | undefined> } {
   return { headers }
@@ -157,5 +157,33 @@ describe('isTrustedApiRequest', () => {
     expect(isTrustedApiRequest(request({ ...markers, host: 'bad host' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '127.0.0.999' }), [])).toBe(false)
     expect(isTrustedApiRequest(request({ ...markers, host: '128.0.0.1' }), [])).toBe(false)
+  })
+})
+
+describe('isTrustedNavigationRequest', () => {
+  it('refuses an untrusted Host even when the navigation is cross-site', () => {
+    expect(isTrustedNavigationRequest(request({ host: 'evil.example', 'sec-fetch-site': 'cross-site' }), [])).toBe(false)
+    expect(isTrustedNavigationRequest(request({ host: 'harness.example:3080', 'sec-fetch-site': 'cross-site' }), [])).toBe(false)
+    expect(isTrustedNavigationRequest(request({}), [])).toBe(false)
+  })
+
+  it('accepts loopback and declared Hosts with a cross-site marker or a foreign Origin', () => {
+    expect(isTrustedNavigationRequest(request({ host: '127.0.0.1:3080', 'sec-fetch-site': 'cross-site' }), [])).toBe(true)
+    expect(isTrustedNavigationRequest(request({ host: 'localhost:3080', origin: 'http://evil.example' }), [])).toBe(true)
+    expect(isTrustedNavigationRequest(request({ host: 'harness.internal:3080', 'sec-fetch-site': 'cross-site' }), ['harness.internal'])).toBe(true)
+    expect(isTrustedNavigationRequest(request({ host: 'harness.internal', origin: 'null' }), ['harness.internal'])).toBe(true)
+  })
+
+  it('still runs the Host fence on the bind address and on Host parsing', () => {
+    expect(isTrustedNavigationRequest(request({ host: '10.1.2.3:3080', 'sec-fetch-site': 'cross-site' }), [], '10.1.2.3')).toBe(true)
+    expect(isTrustedNavigationRequest(request({ host: '10.1.2.4:3080' }), [], '10.1.2.3')).toBe(false)
+    expect(isTrustedNavigationRequest(request({ host: 'bad host' }), [])).toBe(false)
+  })
+})
+
+describe('isTrustedApiRequest keeps the cross-site and Origin fences', () => {
+  it('refuses a cross-site or foreign-Origin request on a trusted Host', () => {
+    expect(isTrustedApiRequest(request({ host: 'localhost:3080', 'sec-fetch-site': 'cross-site' }), [])).toBe(false)
+    expect(isTrustedApiRequest(request({ host: 'localhost:3080', origin: 'http://evil.example' }), [])).toBe(false)
   })
 })

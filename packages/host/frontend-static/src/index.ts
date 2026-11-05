@@ -164,11 +164,13 @@ export function apply(ctx: Context, config: Config): void {
   const distRoot = dirname(distIndex)
   // schemastery's .default() guarantees the field is set after validation.
   const loginUrl = config.loginUrl as string
-  // A staff-Peer-capable index carries the login URL so the client can redirect
-  // a lost staff session; owner-only deployments keep the index unchanged.
+  // The login URL is emitted for staff-Peer renders only, so the client can
+  // redirect a lost staff session; owner renders and owner-only deployments
+  // keep the index unchanged.
   ctx.inject(['webServer'], (webCtx) => {
-    webCtx.on('webserver/index-inject', (table) => {
-      if (ctx.get('externalPeerAdmission') === undefined) return
+    webCtx.on('webserver/index-inject', (table, peer) => {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
+      if (ctx.get('externalPeerAdmission') === undefined || peer.principal.kind === 'owner') return
       table.push({
         kind: 'html',
         placement: 'head',
@@ -197,7 +199,7 @@ export function apply(ctx: Context, config: Config): void {
   const authorizeIndex = async (request: Request): Promise<IndexAccess> => {
     const owner = ownerIndex(request)
     if (!('response' in owner) || owner.response.status !== 401 || ctx.get('externalPeerAdmission') === undefined) return owner
-    const admission = await ctx.connection.admitAsync(request)
+    const admission = await ctx.connection.admitAsync(request, { navigation: true })
     if ('peer' in admission) return { peer: admission.peer, staff: true }
     if (admission.rejection === 403) return owner
     const url = new URL(request.url)

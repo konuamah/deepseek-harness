@@ -826,6 +826,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the credential\'s Peer, or the rejection status.',
       },
       {
+        signature: 'admitAsync(request: ConnectionTrustRequest, options?: { readonly navigation?: boolean }): Promise<PeerAdmission>',
+        description: 'Admit a request like admit, then ask the external Peer provider when the owner path refuses a request that passed the Host/Origin fence. `navigation` admits a safe document navigation (the Host fence only, so a cross-site top-level navigation passes). /api, sockets, fetch routes and events never pass it.',
+        parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }, { name: 'options', description: '`navigation: true` for the index document branch only.' }],
+        returns: 'the owner or external Peer, or the rejection status.',
+      },
+      {
+        signature: 'admitConnectionAsync(request: ConnectionTrustRequest): Promise<ConnectionAdmission>',
+        description: 'Claim a physical socket like admitConnection, with external Peer admission as a fallback. External Peers are shared by key and are not claimed.',
+        parameters: [{ name: 'request', description: 'authenticated upgrade request headers.' }],
+        returns: 'the Peer with an idempotent release, or a rejection status.',
+      },
+      {
+        signature: 'disposeExternalPeer(key: string): void',
+        description: 'Dispose and forget the external Peer for one key; its signal aborts so its sockets close.',
+        parameters: [{ name: 'key', description: 'the key the external provider returned for that Peer.' }],
+      },
+      {
         signature: 'createPeer(options: { readonly principal: Principal; readonly interactions?: \'answer\' | \'none\' }): PeerScope',
         description: 'Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.',
         parameters: [{ name: 'options', description: 'fixed principal and optional interaction participation (default `answer`).' }],
@@ -1154,6 +1171,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one child directory for a Remote caller\'s in-app browser.',
         parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],
         returns: 'the created directory\'s absolute path.',
+      },
+    ],
+  },
+  {
+    key: 'externalPeerAdmission',
+    summary: 'Admits non-owner Peers from request headers.',
+    description: 'Admits non-owner Peers from request headers. A provider may throw; Connection treats a throw as a denial. Connection calls it only after the owner path refused a request that passed the Host/Origin fence.',
+    methods: [
+      {
+        signature: 'admit(headers: Readonly<Record<string, string | string[] | undefined>>): Promise<ExternalAdmission>',
+        description: 'Decide one request.',
+        parameters: [{ name: 'headers', description: 'request headers from the Fetch or node:http representation.' }],
+        returns: 'the admitted key and principal, or a denial.',
       },
     ],
   },
@@ -3598,6 +3628,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'staffSessions',
+    summary: 'The service this plugin provides under `staffSessions`.',
+    description: 'The service this plugin provides under `staffSessions`.',
+    methods: [
+      {
+        signature: 'readonly owners: SessionOwnerIndex',
+        description: 'Owner index of the Sessions staff users own.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'storage',
     summary: 'The storage hub service.',
     description: 'The storage hub service. Backends register under `backend`; data forms mount under their `StorageForms` key and are reached as `ctx.storage.<form>`.',
@@ -4812,6 +4854,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'summary', description: 'current list row for the Session.' }],
   },
   {
+    name: 'api-session/create-request',
+    mode: 'waterfall',
+    signature: '\'api-session/create-request\'(call: SessionCreateCall, next: () => Promise<void>): Promise<void>',
+    summary: 'Admit or reject one create request before any Session is created.',
+    description: 'Admit or reject one create request before any Session is created. A listener may reassign `request` or narrow `reusable` on `call`, or reject by throwing; it MUST call `next()` to keep the create going.',
+    parameters: [{ name: 'call', description: 'the create request, its non-owner caller, and the reuse filter.' }, { name: 'next', description: 'delegate to the remaining listeners and the built-in create.' }],
+  },
+  {
+    name: 'api-session/created',
+    mode: 'parallel',
+    signature: '\'api-session/created\'(sessionId: SessionId, principal: Principal | undefined): Promise<void> | void',
+    summary: 'A Session was created or reused for a create request, before the create returns.',
+    description: 'A Session was created or reused for a create request, before the create returns. A rejection fails the create and disposes the created Session.',
+    parameters: [{ name: 'sessionId', description: 'the Session the create returns.' }, { name: 'principal', description: 'non-owner caller of the create, or undefined for the owner.' }],
+  },
+  {
     name: 'api-session/error',
     mode: 'emit',
     signature: '\'api-session/error\'(sessionId: SessionId, message: string): void',
@@ -5146,6 +5204,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'The configured index sources changed.',
     description: 'The configured index sources changed.',
     parameters: [],
+  },
+  {
+    name: 'remote-access/denied',
+    mode: 'emit',
+    signature: '\'remote-access/denied\'(principal: Principal, action: string, resource?: RemoteAccessResource): void',
+    summary: 'A non-owner call or event was refused by `decide()`.',
+    description: 'A non-owner call or event was refused by `decide()`. The Gateway then throws `remote-access/denied` or drops the event; listeners observe the refusal and cannot change it.',
+    parameters: [{ name: 'principal', description: 'the refused caller or event recipient.' }, { name: 'action', description: 'the refused `<namespace>/<method>` endpoint, or `event:<name>` for a dropped event.' }, { name: 'resource', description: 'the resource the refusal named (its kind and id); omitted when the request named none.' }],
   },
   {
     name: 'schedule/changed',
@@ -6338,6 +6404,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EveryScheduleRecord',
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'ExternalAdmission',
+    declaration: 'export type ExternalAdmission = {\n    readonly kind: \'allow\';\n    readonly key: string;\n    readonly principal: Principal;\n} | {\n    readonly kind: \'deny\';\n};',
   },
   {
     name: 'FeedbackCategory',
@@ -8260,6 +8330,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
   },
   {
+    name: 'SessionCreateCall',
+    declaration: 'export interface SessionCreateCall {\n    request: SessionCreateRequest;\n    readonly principal: Principal | undefined;\n    reusable: (sessionId: SessionId) => boolean;\n}',
+  },
+  {
     name: 'SessionCreateRequest',
     declaration: 'export interface SessionCreateRequest {\n    readonly workspaceId?: WorkspaceId;\n    readonly cwd?: string;\n    readonly sessionId?: SessionId;\n    readonly agentPreset?: string;\n}',
   },
@@ -8506,6 +8580,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionOpenWorkspacePathValue',
     declaration: 'export interface SessionOpenWorkspacePathValue {\n    readonly opened: true;\n}',
+  },
+  {
+    name: 'SessionOwnerIndex',
+    declaration: 'export interface SessionOwnerIndex {\n    record(sessionId: SessionId, userId: number): void;\n    ownerOf(sessionId: SessionId): number | undefined;\n    sessionsOf(userId: number): SessionId[];\n    forget(sessionId: SessionId): void;\n}',
   },
   {
     name: 'SessionPage',

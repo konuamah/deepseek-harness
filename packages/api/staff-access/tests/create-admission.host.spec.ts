@@ -8,6 +8,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as StaffAccess from '../src/plugin.ts'
+import { provideWorkspaceRegistry, SHARED_WORKSPACE_ID, settle } from './workspace-registry-stub.ts'
 import { staffPrincipal } from '../src/index.ts'
 
 const STAFF = staffPrincipal({ userId: 1, role: 'ADMISSIONS_OFFICER' })
@@ -30,7 +31,9 @@ async function setup(): Promise<Context> {
   roots.push(ctx)
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(RemoteAccessService)
-  await ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json'), djangoBaseUrl: 'https://django.test' })
+  provideWorkspaceRegistry(ctx)
+  await ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json'), djangoBaseUrl: 'https://django.test', workspaceDir: join(dir, 'workspace') })
+  await settle()
   return ctx
 }
 
@@ -51,7 +54,38 @@ describe('staff create admission', () => {
 
     await admit(ctx, call)
 
-    expect(call.request).toEqual({ agentPreset: 'staff' })
+    expect(call.request).toEqual({ agentPreset: 'staff', workspaceId: SHARED_WORKSPACE_ID })
+  })
+
+  it('places a staff create without workspaceId in the shared Workspace', async () => {
+    const ctx = await setup()
+    const call = createCall(STAFF)
+
+    await admit(ctx, call)
+
+    expect(call.request).toEqual({ agentPreset: 'staff', workspaceId: SHARED_WORKSPACE_ID })
+  })
+
+  it('accepts a staff create that names the shared Workspace', async () => {
+    const ctx = await setup()
+    const call = createCall(STAFF, { workspaceId: SHARED_WORKSPACE_ID })
+
+    await admit(ctx, call)
+
+    expect(call.request).toEqual({ agentPreset: 'staff', workspaceId: SHARED_WORKSPACE_ID })
+  })
+
+  it('refuses a staff create before the shared Workspace is registered', async () => {
+    const ctx = new Context()
+    roots.push(ctx)
+    await ctx.plugin(TypertRegistry)
+    await ctx.plugin(RemoteAccessService)
+    ctx.provide('workspaceRegistry', { create: () => new Promise(() => {}) } as never)
+    await ctx.plugin(StaffAccess, { ownersFile: join(dir, 'owners.json'), djangoBaseUrl: 'https://django.test', workspaceDir: join(dir, 'workspace') })
+    const call = createCall(STAFF)
+
+    await expect(admit(ctx, call)).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect(call.request).toEqual({})
   })
 
   it.each([
@@ -64,6 +98,25 @@ describe('staff create admission', () => {
 
     await expect(admit(ctx, call)).rejects.toMatchObject({ code: 'gateway/bad-request' })
     expect(call.request).toEqual(request)
+  })
+
+  it('keeps a named Session the caller owns', async () => {
+    const ctx = await setup()
+    ctx.staffSessions.owners.record(SessionId('mine'), 1)
+    const call = createCall(STAFF, { sessionId: SessionId('mine') })
+
+    await admit(ctx, call)
+
+    expect(call.request).toEqual({ agentPreset: 'staff', workspaceId: SHARED_WORKSPACE_ID, sessionId: SessionId('mine') })
+  })
+
+  it('refuses a named Session another user owns', async () => {
+    const ctx = await setup()
+    ctx.staffSessions.owners.record(SessionId('theirs'), 2)
+    const call = createCall(STAFF, { sessionId: SessionId('theirs') })
+
+    await expect(admit(ctx, call)).rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect(call.request).toEqual({ sessionId: SessionId('theirs') })
   })
 
   it('leaves owner creates unchanged', async () => {

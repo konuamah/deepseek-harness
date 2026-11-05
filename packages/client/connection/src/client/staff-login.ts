@@ -79,5 +79,21 @@ export function createStaffLogin(options: StaffLoginOptions): StaffLogin {
   }
 }
 
+/**
+ * Wire the staff login hooks for the page, or no-op hooks when staff login is off.
+ * @param config - login path and page location, or undefined when the Host did not inject a login URL.
+ * @returns hooks that redirect through the same-origin {@link STAFF_PROBE_PATH} probe, or no-op hooks.
+ */
+export function wireStaffLogin(config: { readonly loginUrl: string; readonly location: StaffLoginLocation } | undefined): StaffLogin {
+  // A disabled feature must not change any caller.
+  if (config === undefined) return { unauthorized: () => {}, watchSocket: () => {} }
+  return createStaffLogin({
+    loginUrl: config.loginUrl,
+    location: config.location,
+    probe: () => globalThis.fetch(STAFF_PROBE_PATH, { method: 'GET', credentials: 'same-origin' })
+      .then(response => response.status),
+  })
+}
+
 /** Probe request: the /api prefix is admitted before routing, so 401 means no session. Any other status means a session. */
 export const STAFF_PROBE_PATH = `${API_PATH.slice(1)}/`

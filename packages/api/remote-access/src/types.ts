@@ -121,6 +121,21 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A non-owner call or event was refused by `decide()`. The Gateway then
+     * throws `remote-access/denied` or drops the event; listeners observe the
+     * refusal and cannot change it.
+     * @mode emit
+     * @param principal - the refused caller or event recipient.
+     * @param action - the refused `<namespace>/<method>` endpoint, or `event:<name>` for a dropped event.
+     * @param resource - the resource the refusal named (its kind and id); omitted when the request named none.
+     */
+    'remote-access/denied'(principal: Principal, action: string, resource?: RemoteAccessResource): void
+  }
+}
+
 /** The endpoint actions one principal may call on one resource. */
 export interface RemoteAccessGrant {
   readonly resource: RemoteAccessResource

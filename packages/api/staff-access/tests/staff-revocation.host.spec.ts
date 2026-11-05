@@ -7,6 +7,7 @@ import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as StaffAccess from '../src/plugin.ts'
+import { provideWorkspaceRegistry } from './workspace-registry-stub.ts'
 
 const COOKIE = 'SECRET-COOKIE-222'
 const BASE = 'https://django.test'
@@ -42,9 +43,11 @@ async function mount(extra: Partial<StaffAccess.Config> = {}) {
   const connection = { disposeExternalPeer: vi.fn() }
   ctx.provide('connection', connection as never)
   ctx.provide('agents', { get: () => undefined } as never)
+  provideWorkspaceRegistry(ctx)
   const fiber = ctx.plugin(StaffAccess, {
     ownersFile: join(dir, 'owners.json'),
     djangoBaseUrl: BASE,
+    workspaceDir: join(dir, 'workspace'),
     sweepIntervalMs: INTERVAL,
     ...extra,
   })

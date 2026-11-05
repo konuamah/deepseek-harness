@@ -242,10 +242,14 @@ export interface HostConnectionHandle {
   /**
    * Admit a request like {@link admit}, then ask the external Peer provider when
    * the owner path refuses a request that passed the Host/Origin fence.
+   * `navigation` admits a safe document navigation (the Host fence only, so a
+   * cross-site top-level navigation passes). /api, sockets, fetch routes and
+   * events never pass it.
    * @param request - request headers from the HTTP or upgrade request.
+   * @param options - `navigation: true` for the index document branch only.
    * @returns the owner or external Peer, or the rejection status.
    */
-  admitAsync(request: ConnectionTrustRequest): Promise<PeerAdmission>
+  admitAsync(request: ConnectionTrustRequest, options?: { readonly navigation?: boolean }): Promise<PeerAdmission>
 
   /**
    * Claim a physical socket like {@link admitConnection}, with external Peer admission

@@ -21,6 +21,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
+import { CreateAnnouncements } from './create-announcements.ts'
 import { SessionControlController } from './control.ts'
 import { HistoryController } from './history/controller.ts'
 import { StateController } from './state/controller.ts'
@@ -181,6 +182,7 @@ export class SessionController extends TypertRemoteService {
 
   private agents!: ApiSessionAgentController
   private commands!: SessionCommandController
+  private announcements!: CreateAnnouncements
   private controlState!: SessionControlController
   private listState!: ApiSessionList
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
@@ -212,7 +214,11 @@ export class SessionController extends TypertRemoteService {
     ctx.typert.resources.register('session', { resolve: resolveSessionResource })
     this.agents = new ApiSessionAgentController(ctx)
     this.agents.initialize()
-    this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.announcements = new CreateAnnouncements((sessionId) => {
+      const session = ctx.sessions.get(sessionId)
+      if (session !== undefined) ctx.emit('api-session/added', this.listState.summaryFor(session))
+    })
+    this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.announcements)
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -240,12 +246,15 @@ export class SessionController extends TypertRemoteService {
     ctx.plugin(ArchivedSessionGate)
 
     ctx.on('session/created', (session) => {
+      if (this.announcements.suppresses(session.id)) return
       ctx.emit('api-session/added', this.listState.summaryFor(session))
     })
     ctx.on('session/disposed', (session) => {
+      if (this.announcements.suppresses(session.id)) return
       ctx.emit('api-session/removed', session.id)
     })
     const publishAgentAvailability = ({ agent }: { agent: Agent }): undefined => {
+      if (this.announcements.suppresses(agent.id)) return
       if (ctx.sessions.get(agent.id) === agent.session) {
         ctx.emit('api-session/added', this.listState.summaryFor(agent.session))
       }

@@ -1108,6 +1108,42 @@ describe('external Peer admission', () => {
     } finally { await dispose() }
   })
 
+  it('admits a cross-site navigation through the provider only with the navigation option', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)
+    try {
+      const navigation = fakeRequest({ host: 'localhost', 'sec-fetch-site': 'cross-site' })
+      const admission = await connection.admitAsync(navigation, { navigation: true })
+      expect(admission).toMatchObject({ peer: { principal: STAFF } })
+      expect(admit).toHaveBeenCalledTimes(1)
+      // Without the option the same request still fails the cross-site fence before the provider.
+      expect(await connection.admitAsync(navigation)).toEqual({ rejection: 403 })
+      expect(admit).toHaveBeenCalledTimes(1)
+    } finally { await dispose() }
+  })
+
+  it('keeps the Host fence for navigations: an untrusted Host never reaches the provider', async () => {
+    const { admit, provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
+    const { connection, dispose } = await mounted({ trustedHosts: ['harness.example'] }, 'http:', undefined, provider)
+    try {
+      expect(await connection.admitAsync(
+        fakeRequest({ host: 'other.example', 'sec-fetch-site': 'cross-site' }),
+        { navigation: true },
+      )).toEqual({ rejection: 403 })
+      expect(admit).not.toHaveBeenCalled()
+    } finally { await dispose() }
+  })
+
+  it('answers a cross-site navigation 401 when no provider admits it', async () => {
+    const { connection, dispose } = await mounted()
+    try {
+      expect(await connection.admitAsync(
+        fakeRequest({ host: 'localhost', 'sec-fetch-site': 'cross-site' }),
+        { navigation: true },
+      )).toEqual({ rejection: 401 })
+    } finally { await dispose() }
+  })
+
   it('disposes an external Peer by key and admits a fresh one afterwards', async () => {
     const { provider } = externalProvider({ kind: 'allow', key: 'staff:42', principal: STAFF })
     const { connection, dispose } = await mounted(undefined, 'http:', undefined, provider)

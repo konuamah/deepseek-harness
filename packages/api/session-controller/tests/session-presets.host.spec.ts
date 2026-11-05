@@ -751,3 +751,64 @@ describe('session.create admission events', () => {
     expect(ctx.agents.get(createdId!)).toBeUndefined()
   })
 })
+
+describe('session.create list announcements', () => {
+  const ALICE: Principal = { kind: 'test-guest', guest: 'alice' }
+  const BOB: Principal = { kind: 'test-guest', guest: 'bob' }
+
+  /**
+   * Record each list announcement with the recipients the owner record admits at the moment it is emitted,
+   * as the staff policy filters Session events: an owned Session reaches its owner, an unowned one reaches the owner.
+   * @param ctx - Context whose announcement events are recorded.
+   * @param failRecord - whether the owner record listener refuses every created Session.
+   * @returns the deliveries recorded so far.
+   */
+  function watch(ctx: Context, failRecord = false) {
+    const owners = new Map<SessionId, Principal>()
+    const delivered: { to: string; event: string; sessionId: SessionId }[] = []
+    const deliver = (event: string, sessionId: SessionId): void => {
+      const owner = owners.get(sessionId)
+      if (owner === undefined) delivered.push({ to: 'owner', event, sessionId })
+      else if (owner === ALICE) delivered.push({ to: 'alice', event, sessionId })
+      else if (owner === BOB) delivered.push({ to: 'bob', event, sessionId })
+    }
+    ctx.on('api-session/created', (sessionId, principal) => {
+      if (failRecord) throw new Error('owner record refused')
+      if (principal !== undefined) owners.set(sessionId, principal)
+    })
+    ctx.on('api-session/added', (summary) => { deliver('added', summary.sessionId) })
+    ctx.on('api-session/removed', (sessionId) => { deliver('removed', sessionId) })
+    return delivered
+  }
+
+  it('delivers the added announcement of a non-owner create to its creator only', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    const delivered = watch(ctx)
+
+    const created = await createAs(ctx, ALICE, {})
+
+    expect(delivered).toEqual([{ to: 'alice', event: 'added', sessionId: created.sessionId }])
+  })
+
+  it('sends no announcement for a non-owner create whose owner record fails, to anyone', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    const delivered = watch(ctx, true)
+
+    await expect(createAs(ctx, ALICE, {})).rejects.toMatchObject({ code: 'gateway/internal' })
+
+    expect(delivered).toEqual([])
+  })
+
+  it('keeps the owner create announcement unchanged', async () => {
+    const { ctx } = await harness({ presets: ['standard', 'minimal'] })
+    const delivered = watch(ctx)
+
+    const created = await createAs(ctx, undefined, {})
+
+    // The session/created and agent/created listeners each announce the Session, as before this change.
+    expect(delivered).toEqual([
+      { to: 'owner', event: 'added', sessionId: created.sessionId },
+      { to: 'owner', event: 'added', sessionId: created.sessionId },
+    ])
+  })
+})

@@ -14,11 +14,14 @@
     "src/plugin.ts",
     "src/policy.ts",
     "src/principal.ts",
+    "src/staff-workspace.ts",
     "src/types.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../core/session" },
+    { "path": "../../util/home-paths" },
+    { "path": "../../workspace/workspace" },
     { "path": "../remote-access/tsconfig.host.json" },
     { "path": "../session-controller/tsconfig.host.json" }
   ]

@@ -145,6 +145,32 @@ requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 admit(request: ConnectionTrustRequest): PeerAdmission
 
 /**
+ * Admit a request like {@link admit}, then ask the external Peer provider when
+ * the owner path refuses a request that passed the Host/Origin fence.
+ * `navigation` admits a safe document navigation (the Host fence only, so a
+ * cross-site top-level navigation passes). /api, sockets, fetch routes and
+ * events never pass it.
+ * @param request - request headers from the HTTP or upgrade request.
+ * @param options - `navigation: true` for the index document branch only.
+ * @returns the owner or external Peer, or the rejection status.
+ */
+admitAsync(request: ConnectionTrustRequest, options?: { readonly navigation?: boolean }): Promise<PeerAdmission>
+
+/**
+ * Claim a physical socket like {@link admitConnection}, with external Peer admission
+ * as a fallback. External Peers are shared by key and are not claimed.
+ * @param request - authenticated upgrade request headers.
+ * @returns the Peer with an idempotent release, or a rejection status.
+ */
+admitConnectionAsync(request: ConnectionTrustRequest): Promise<ConnectionAdmission>
+
+/**
+ * Dispose and forget the external Peer for one key; its signal aborts so its sockets close.
+ * @param key - the key the external provider returned for that Peer.
+ */
+disposeExternalPeer(key: string): void
+
+/**
  * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
  * @param options - fixed principal and optional interaction participation (default `answer`).
  * @returns a new Peer distinct from every other Peer.
@@ -181,6 +207,23 @@ authenticatedUrl(baseUrl: string): string
 Types: [Principal](typert.md)
 
 Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)
+
+<a id="ctxexternalpeeradmission--externalpeeradmission"></a>
+
+### `ctx.externalPeerAdmission` — `ExternalPeerAdmission`
+
+Admits non-owner Peers from request headers. A provider may throw; Connection treats a throw as a denial. Connection calls it only after the owner path refused a request that passed the Host/Origin fence.
+
+```ts cordis-catalog
+/**
+ * Decide one request.
+ * @param headers - request headers from the Fetch or node:http representation.
+ * @returns the admitted key and principal, or a denial.
+ */
+admit(headers: Readonly<Record<string, string | string[] | undefined>>): Promise<ExternalAdmission>
+```
+
+Source: [`packages/client/connection/src/external-admission.ts`](../../packages/client/connection/src/external-admission.ts)
 
 <a id="ctxwebapp--webapp"></a>
 

@@ -6,7 +6,7 @@
  * GET/HEAD, and seat release on fiber disposal (HMR safety).
  */
 
-import { request as httpRequest } from 'node:http'
+import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -317,20 +317,30 @@ describe('real Loader composition', () => {
   })
 })
 
-/** GET one path with an exact Host header, which Fetch does not let a test set. */
-function getWithHost(port: number | undefined, path: string, host: string): Promise<{ status: number; body: string }> {
+/** GET one path with exact raw request headers, which Fetch does not let a test set (Host, Sec-Fetch-Site). */
+function getWithHeaders(
+  port: number | undefined,
+  path: string,
+  headers: Record<string, string>,
+): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
   if (port === undefined) throw new Error('frontend-static test: the listener has not bound a port')
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, headers }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', (chunk: Buffer) => { chunks.push(chunk) })
       res.on('end', () => {
-        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+        resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') })
       })
     })
     req.on('error', reject)
     req.end()
   })
+}
+
+/** GET one path with an exact Host header, which Fetch does not let a test set. */
+async function getWithHost(port: number | undefined, path: string, host: string): Promise<{ status: number; body: string }> {
+  const { status, body } = await getWithHeaders(port, path, { host })
+  return { status, body }
 }
 
 describe('external Peer index admission', () => {
@@ -364,7 +374,9 @@ describe('external Peer index admission', () => {
     const owner = await fetch(`${base}/`, { headers: { cookie } })
     expect(owner.status).toBe(200)
     expect(owner.headers.get('cache-control')).toBeNull()
-    expect(await owner.text()).toContain('owner')
+    const ownerHtml = await owner.text()
+    expect(ownerHtml).toContain('owner')
+    expect(ownerHtml).not.toContain('dsh-staff-login-url')
     expect(attempts).toBe(0)
 
     // An anonymous index request is admitted as the staff Peer, rendered uncached.
@@ -426,19 +438,24 @@ describe('external Peer index admission', () => {
 
   it('renders the login URL meta element only when an external Peer provider is composed', { timeout: 60_000 }, async () => {
     const page = '<head></head><body></body>'
+    const staffPeer = { principal: STAFF } as Connection.PeerScope
     const withProvider = await loadComposition(provider)
-    const rendered = withProvider.webServer.renderIndex(page, withProvider.connection.browserPeer)
-    expect(rendered).toContain('<meta name="dsh-staff-login-url" content="/login">')
+    expect(withProvider.webServer.renderIndex(page, withProvider.connection.browserPeer)).not.toContain('dsh-staff-login-url')
+    expect(withProvider.webServer.renderIndex(page, staffPeer)).toContain('<meta name="dsh-staff-login-url" content="/login">')
     await withProvider.fiber.dispose()
     context = undefined
 
     const ownerOnly = await loadComposition()
     expect(ownerOnly.webServer.renderIndex(page, ownerOnly.connection.browserPeer)).not.toContain('dsh-staff-login-url')
+    expect(ownerOnly.webServer.renderIndex(page, staffPeer)).not.toContain('dsh-staff-login-url')
   })
 
   it('renders a configured loginUrl as the login URL meta content', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition(provider, '/signin')
-    const rendered = loaded.webServer.renderIndex('<head></head><body></body>', loaded.connection.browserPeer)
+    const page = '<head></head><body></body>'
+    const staffPeer = { principal: STAFF } as Connection.PeerScope
+    expect(loaded.webServer.renderIndex(page, loaded.connection.browserPeer)).not.toContain('dsh-staff-login-url')
+    const rendered = loaded.webServer.renderIndex(page, staffPeer)
     expect(rendered).toContain('<meta name="dsh-staff-login-url" content="/signin">')
     expect(rendered).not.toContain('content="/login"')
   })
@@ -449,5 +466,69 @@ describe('external Peer index admission', () => {
     for (const loginUrl of ['//evil.example', '/\\evil.example', 'https://x', 'login']) {
       expect(() => FrontendStatic.Config({ distIndex: '/dist/index.html', loginUrl })).toThrow()
     }
+  })
+})
+
+describe('cross-site navigation admission', () => {
+  const STAFF: Connection.Principal = { kind: 'staff', userId: 42, role: 'teacher' }
+  let calls = 0
+  /** Admits the staff Peer only for the cookie the provider recognizes. */
+  const provider: Connection.ExternalPeerAdmission = {
+    async admit(headers): Promise<Connection.ExternalAdmission> {
+      calls += 1
+      return headers.cookie === 'staff=ok'
+        ? { kind: 'allow', key: 'staff:42', principal: STAFF }
+        : { kind: 'deny' }
+    },
+  }
+
+  it('admits a cross-site index navigation with a staff cookie and renders it uncached', { timeout: 60_000 }, async () => {
+    calls = 0
+    const loaded = await loadComposition(provider)
+    loaded.on('webserver/index-inject', (rows, peer) => {
+      rows.push({ kind: 'global', name: 'who', value: peer.principal })
+    })
+    const response = await getWithHeaders(loaded.webServer.port, '/', {
+      host: `127.0.0.1:${String(loaded.webServer.port)}`, 'sec-fetch-site': 'cross-site', cookie: 'staff=ok',
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.body).toContain('teacher')
+    expect(response.body).not.toContain('owner')
+    expect(calls).toBe(1)
+  })
+
+  it('redirects a cross-site index navigation without a cookie to loginUrl', { timeout: 60_000 }, async () => {
+    calls = 0
+    const loaded = await loadComposition(provider)
+    const response = await getWithHeaders(loaded.webServer.port, '/?a=1', {
+      host: `127.0.0.1:${String(loaded.webServer.port)}`, 'sec-fetch-site': 'cross-site',
+    })
+    expect(response.status).toBe(302)
+    expect(response.headers.location).toBe(`/login?next=${encodeURIComponent('/?a=1')}`)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(calls).toBe(1)
+  })
+
+  it('answers the owner 401 without the provider for a cross-site index request on an untrusted Host', { timeout: 60_000 }, async () => {
+    calls = 0
+    const loaded = await loadComposition(provider)
+    const response = await getWithHeaders(loaded.webServer.port, '/', {
+      host: 'evil.example', 'sec-fetch-site': 'cross-site', cookie: 'staff=ok',
+    })
+    expect(response.status).toBe(401)
+    expect(response.body).toBe('dsh web authentication required; reopen the URL printed by dsh web.\n')
+    expect(calls).toBe(0)
+  })
+
+  it('keeps a cross-site static asset public without consulting the provider', { timeout: 60_000 }, async () => {
+    calls = 0
+    const loaded = await loadComposition(provider)
+    const response = await getWithHeaders(loaded.webServer.port, '/app.js', {
+      host: `127.0.0.1:${String(loaded.webServer.port)}`, 'sec-fetch-site': 'cross-site',
+    })
+    expect(response.status).toBe(200)
+    expect(response.body).toBe('export {}')
+    expect(calls).toBe(0)
   })
 })

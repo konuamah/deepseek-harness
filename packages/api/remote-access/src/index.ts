@@ -197,28 +197,43 @@ export class RemoteAccessService extends TypertRemoteService {
    *   throws `remote-access/denied` for a denied call and drops a denied event.
    */
   decide(request: RemoteAccessRequest<Principal>): RemoteAccessDecision {
+    const judged = this.decideRequest(request)
+    if (judged.decision.kind === 'deny') this.ctx.emit('remote-access/denied', request.principal, request.action, judged.resource)
+    return judged.decision
+  }
+
+  /**
+   * The decision `decide()` reports, with the resource it was about. The
+   * resource is the refused one, the first requested one for a refusal that
+   * names none, and undefined when the request named no resource.
+   */
+  private decideRequest(request: RemoteAccessRequest<Principal>): {
+    decision: RemoteAccessDecision
+    resource?: RemoteAccessResource | undefined
+  } {
     const { principal, action } = request
+    const first = request.resources[0]
     // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
-    if (principal.kind === 'owner' || action === FOLLOW_ACTION) return ALLOW
+    if (principal.kind === 'owner' || action === FOLLOW_ACTION) return { decision: ALLOW }
     const entry = this.policies.get(principal.kind)
-    if (entry === undefined) return NO_ALLOW
+    if (entry === undefined) return { decision: NO_ALLOW, resource: first }
     const bindings = this.bindingsOf(entry, principal, action)
-    if (bindings === undefined) return POLICY_FAILED
+    if (bindings === undefined) return { decision: POLICY_FAILED, resource: first }
     for (const resource of request.resources) {
       const evaluation = this.evaluate(entry, bindings, action, resource, request.args)
       switch (evaluation.kind) {
         case 'allow':
           continue
         case 'failed':
-          return POLICY_FAILED
+          return { decision: POLICY_FAILED, resource }
         case 'refuse':
-          return evaluation.refusal ?? this.explain(entry, request)
+          return { decision: evaluation.refusal ?? this.explain(entry, request), resource }
         /* v8 ignore next -- closed union. */
         default:
           return assertNever(evaluation)
       }
     }
-    return ALLOW
+    return { decision: ALLOW }
   }
 
   /**

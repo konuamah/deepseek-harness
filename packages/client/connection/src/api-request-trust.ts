@@ -111,7 +111,56 @@ function isBindAddressAuthority(hostUrl: URL, bindHost: string | undefined): boo
 }
 
 /**
- * Decide whether one /api request may reach the RPC bridge.
+ * Host fence (DNS-rebinding defense), applied to every request: the browser
+ * fills Host from the URL it believes it is talking to, so a rebound page
+ * carries the attacker's domain here even though the socket lands on this
+ * server. There is no marker shortcut — a browser read over plain HTTP
+ * (images and navigations) arrives with neither Origin nor
+ * Fetch-Metadata, indistinguishable from curl, and its response is readable
+ * by the rebound page.
+ * @returns the Host header value when it names this listener, else undefined.
+ */
+function trustedHostHeader(
+  request: ConnectionTrustRequest,
+  trustedHosts: readonly string[],
+  bindHost: string | undefined,
+  protocol: 'http:' | 'https:',
+): string | undefined {
+  const host = header(request.headers, 'host')
+  if (host === undefined) return undefined
+  const hostUrl = parseAuthority(host, protocol)
+  if (hostUrl === undefined) return undefined
+  if (!isLoopbackHostname(hostUrl.hostname)
+    && !isTrustedAuthority(hostUrl, trustedHosts, protocol)
+    && !isBindAddressAuthority(hostUrl, bindHost)) return undefined
+  return host
+}
+
+/**
+ * Decide whether one document navigation may be answered by an index page.
+ * Only the Host fence runs: a top-level navigation from another site (a link
+ * or a cross-site redirect) is a normal browser read, so the Sec-Fetch-Site
+ * and Origin fences of {@link isTrustedApiRequest} do not apply. Rebinding
+ * is still refused.
+ * @param request - Node HTTP or Fetch request facts (headers).
+ * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
+ * @param bindHost - the listener's own bind IP literal, accepted on any port independently of `trustedHosts`.
+ * @param protocol - listener protocol for default Host ports; HTTP when no Web carrier is mounted.
+ * @returns true when the Host is ours (loopback, the bind address, or trusted).
+ */
+export function isTrustedNavigationRequest(
+  request: ConnectionTrustRequest,
+  trustedHosts: readonly string[],
+  bindHost?: string,
+  protocol: 'http:' | 'https:' = 'http:',
+): boolean {
+  return trustedHostHeader(request, trustedHosts, bindHost, protocol) !== undefined
+}
+
+/**
+ * Decide whether one /api request may reach the RPC bridge: the Host fence,
+ * then the cross-site and Origin fences that guard browser-initiated API calls
+ * and sockets.
  * @param request - Node HTTP or Fetch request facts (headers).
  * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
  * @param bindHost - the listener's own bind IP literal, accepted on any port independently of `trustedHosts`.
@@ -124,20 +173,8 @@ export function isTrustedApiRequest(
   bindHost?: string,
   protocol: 'http:' | 'https:' = 'http:',
 ): boolean {
-  // Host fence (DNS-rebinding defense), applied to every request: the browser
-  // fills Host from the URL it believes it is talking to, so a rebound page
-  // carries the attacker's domain here even though the socket lands on this
-  // server. There is no marker shortcut — a browser read over plain HTTP
-  // (images and navigations) arrives with neither Origin nor
-  // Fetch-Metadata, indistinguishable from curl, and its response is readable
-  // by the rebound page.
-  const host = header(request.headers, 'host')
+  const host = trustedHostHeader(request, trustedHosts, bindHost, protocol)
   if (host === undefined) return false
-  const hostUrl = parseAuthority(host, protocol)
-  if (hostUrl === undefined) return false
-  if (!isLoopbackHostname(hostUrl.hostname)
-    && !isTrustedAuthority(hostUrl, trustedHosts, protocol)
-    && !isBindAddressAuthority(hostUrl, bindHost)) return false
   // Cross-site fence: modern browsers label the initiator relationship on
   // every fetch; an explicit cross-site marker is refused regardless of Origin.
   if (header(request.headers, 'sec-fetch-site') === 'cross-site') return false

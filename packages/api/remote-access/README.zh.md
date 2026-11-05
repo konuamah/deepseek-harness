@@ -30,7 +30,7 @@ kind: "package-reference"
 |---|---|
 | `registerPolicy(kind, policy)` | 为一种非 owner principal kind 注册 `RemoteAccessPolicy`；其 `bindings()` 与 `explain()` 收到的 principal 按该 kind 定型。同一 kind 再注册一个 policy 即抛错。登记是调用方 fiber 的 Cordis effect；注册与撤回都会重新计算已打开的快照。 |
 | `invalidate(principal?)` | 报告某个 principal（省略时为所有 principal）的 binding 或 condition 结论可能已变化。业务包在每次授权、撤权、模式切换与过期时调用。 |
-| `decide(request)` | 仅供 Gateway 使用。`request` 为 `{ principal, action, resources, args? }`：调用方或接收方、端点 `ns/method` 或 `event:<name>`、Gateway 解析出的合法资源，以及调用中按 Typert 编译类型校验后的参数（lookup 参数为 wire 身份）。返回 `{ kind: 'allow' }` 或 `{ kind: 'deny', reason }`；调用被拒时由 Gateway 抛出 details 为 `{ action, reason }` 的 `remote-access/denied`，事件被拒时由 Gateway 直接丢弃、不构造错误。owner 与 `remoteAccess/follow` 恒放行。 |
+| `decide(request)` | 仅供 Gateway 使用。`request` 为 `{ principal, action, resources, args? }`：调用方或接收方、端点 `ns/method` 或 `event:<name>`、Gateway 解析出的合法资源，以及调用中按 Typert 编译类型校验后的参数（lookup 参数为 wire 身份）。返回 `{ kind: 'allow' }` 或 `{ kind: 'deny', reason }`；调用被拒时由 Gateway 抛出 details 为 `{ action, reason }` 的 `remote-access/denied`，事件被拒时由 Gateway 直接丢弃、不构造错误。owner 与 `remoteAccess/follow` 恒放行。每次拒绝都会先发出 `remote-access/denied` 事件，携带调用方、端点与被拒资源（请求未指定资源时省略）；监听方只能观察，不能改变决定。 |
 | `allows(resource)` | 读访问本服务的 Context 上的 invocation，因此列表方法对每一项调用 `this.ctx.remoteAccess.allows(resource)`。不带参数判定该调用的端点 action 在该资源上是否被允许，每次判定都重新读取 binding。owner 与 Remote 调用之外恒为 true。 |
 | `snapshotFor(principal)` | 页面打开时的 baseline：owner 为 `{ type: 'baseline', owner: true }`，否则为该 principal 当前的 grant。 |
 | `follow(signal)` | Remote stream `remoteAccess/follow`：一个 `baseline`，之后是 `upsert` 与 `remove` 帧。owner 只收到 `{ type: 'baseline', owner: true }`。`signal` abort 或服务卸载时流结束，因此重载后的服务从新的 baseline 回答每个读者。 |

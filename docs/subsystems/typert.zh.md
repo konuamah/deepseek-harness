@@ -697,4 +697,29 @@ async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
+
+<a id="remote-access-events"></a>
+
+### `remote-access/*` events
+
+<a id="remote-accessdenied--emit"></a>
+
+#### `remote-access/denied` — emit
+
+A non-owner call or event was refused by `decide()`. The Gateway then throws `remote-access/denied` or drops the event; listeners observe the refusal and cannot change it.
+
+```ts cordis-catalog
+/**
+ * A non-owner call or event was refused by `decide()`. The Gateway then
+ * throws `remote-access/denied` or drops the event; listeners observe the
+ * refusal and cannot change it.
+ * @mode emit
+ * @param principal - the refused caller or event recipient.
+ * @param action - the refused `<namespace>/<method>` endpoint, or `event:<name>` for a dropped event.
+ * @param resource - the resource the refusal named (its kind and id); omitted when the request named none.
+ */
+'remote-access/denied'(principal: Principal, action: string, resource?: RemoteAccessResource): void
+```
+
+Source: [`packages/api/remote-access/src/types.ts`](../../packages/api/remote-access/src/types.ts)
 <!-- END GENERATED cordis-surface -->

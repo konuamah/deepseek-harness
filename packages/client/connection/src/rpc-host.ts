@@ -11,7 +11,7 @@ import {
 } from './rpc.ts'
 import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge } from './http-bridge.ts'
-import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
+import { isRemoteAuthority, isTrustedApiRequest, isTrustedNavigationRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
 import { Peer } from './peer.ts'
@@ -134,7 +134,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
-    if (!this.isTrusted(request)) return { rejection: 403 }
+    return this.admitOwner(request, false)
+  }
+
+  private admitOwner(request: ConnectionTrustRequest, navigation: boolean): PeerAdmission {
+    if (!this.isTrusted(request, navigation)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
     const secure = this.owner.get('webServer')?.protocol === 'https:'
     if (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer }
@@ -147,10 +151,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Admit an owner or API request; when the owner path refuses a request that passed the Host/Origin
    * fence, ask the external provider (if one is provided) for a non-owner Peer.
    * @param request - request headers from the HTTP or upgrade request.
+   * @param options - `navigation` admits a document navigation past the cross-site and Origin fences only.
    * @returns the owner or external Peer, or the rejection status.
    */
-  async admitAsync(request: ConnectionTrustRequest): Promise<PeerAdmission> {
-    const admission = this.admit(request)
+  async admitAsync(request: ConnectionTrustRequest, options?: { readonly navigation?: boolean }): Promise<PeerAdmission> {
+    const admission = this.admitOwner(request, options?.navigation === true)
     if (!('rejection' in admission) || admission.rejection !== 401 || this.disposed) return admission
     const provider = this.owner.get('externalPeerAdmission')
     if (provider === undefined) return admission
@@ -225,9 +230,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
   }
 
-  private isTrusted(request: ConnectionTrustRequest): boolean {
+  private isTrusted(request: ConnectionTrustRequest, navigation: boolean): boolean {
     const carrier = this.owner.get('webServer')
-    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
+    const trust = navigation ? isTrustedNavigationRequest : isTrustedApiRequest
+    return trust(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
   }
 
   private publishPeer(interactions: ConnectionInteractions): PeerId {
@@ -242,7 +248,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @param response - response owned to completion.
    */
   authorizeConnect(request: ConnectionIndexRequest, response: ConnectionIndexResponse): void {
-    if (!this.isTrusted(request) || this.disposed) {
+    if (!this.isTrusted(request, false) || this.disposed) {
       response.writeHead(this.disposed ? 401 : 403)
       response.end(this.disposed ? 'unauthorized' : 'forbidden')
       return

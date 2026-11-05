@@ -128,6 +128,19 @@
     - id: workspace-files
       name: '@deepseek-ai/dsh-api-workspace-files'
 
+    # Opt-in staff Remote access: Django session authentication and the staff
+    # policy, with each staff Session running the `staff` preset. Off by
+    # default because it needs a Django origin and an owner file. Enable it with
+    # a profile overlay passed to --patch (the whole config is restated there):
+    #   - id: staff-access
+    #     disabled: false
+    #     config:
+    #       djangoBaseUrl: http://127.0.0.1:8000
+    #       ownersFile: /absolute/path/to/staff-owners.json
+    - id: staff-access
+      name: '@deepseek-ai/dsh-api-staff-access'
+      disabled: true
+
     # The Schedule service owns the task store and delivers each due occurrence
     # as a follow-up to the task's target Session. The clock reading and the four
     # reminder tools belong to the `standard`, `cordis`, and `ptc` presets,

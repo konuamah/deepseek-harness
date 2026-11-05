@@ -1227,6 +1227,14 @@ Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persist
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
+<a id="ctxstaffsessions--staffsessionsservice"></a>
+
+### `ctx.staffSessions` — `StaffSessionsService`
+
+The service this plugin provides under `staffSessions`.
+
+Source: [`packages/api/staff-access/src/plugin.ts`](../../packages/api/staff-access/src/plugin.ts)
+
 <a id="api-session-events"></a>
 
 ### `api-session/*` events
@@ -1268,6 +1276,47 @@ A Session became visible or its Agent was created or disposed. Consumers upsert 
 ```
 
 Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessioncreate-request--waterfall"></a>
+
+#### `api-session/create-request` — waterfall
+
+Admit or reject one create request before any Session is created. A listener may reassign `request` or narrow `reusable` on `call`, or reject by throwing; it MUST call `next()` to keep the create going.
+
+```ts cordis-catalog
+/**
+ * Admit or reject one create request before any Session is created. A
+ * listener may reassign `request` or narrow `reusable` on `call`, or reject
+ * by throwing; it MUST call `next()` to keep the create going.
+ * @mode waterfall
+ * @param call - the create request, its non-owner caller, and the reuse filter.
+ * @param next - delegate to the remaining listeners and the built-in create.
+ */
+'api-session/create-request'(call: SessionCreateCall, next: () => Promise<void>): Promise<void>
+```
+
+Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
+
+<a id="api-sessioncreated--parallel"></a>
+
+#### `api-session/created` — parallel
+
+A Session was created or reused for a create request, before the create returns. A rejection fails the create and disposes the created Session.
+
+```ts cordis-catalog
+/**
+ * A Session was created or reused for a create request, before the create
+ * returns. A rejection fails the create and disposes the created Session.
+ * @mode parallel
+ * @param sessionId - the Session the create returns.
+ * @param principal - non-owner caller of the create, or undefined for the owner.
+ */
+'api-session/created'(sessionId: SessionId, principal: Principal | undefined): Promise<void> | void
+```
+
+Types: [Principal](typert.md) · [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 
 <a id="api-sessionerror--emit"></a>
 

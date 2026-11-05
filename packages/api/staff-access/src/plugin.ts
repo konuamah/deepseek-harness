@@ -14,6 +14,8 @@ import { createDjangoStaffAuthenticator } from './django-authenticator.ts'
 import { createStaffAdmission } from './external-admission.ts'
 import { createSessionOwnerIndex, type SessionOwnerIndex } from './owner-index.ts'
 import { createStaffPolicy } from './policy.ts'
+import { prepareStaffWorkspaceDir, resolveStaffWorkspaceDir } from './staff-workspace.ts'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 
 export const name = 'staff-access'
 
@@ -31,6 +33,18 @@ export interface Config {
   readonly ttlMs?: number
   /** Interval in milliseconds between revocation sweeps. Defaults to 30 000. */
   readonly sweepIntervalMs?: number
+  /**
+   * Write each Remote call or event the staff policy refuses to stderr, once per method, user, and refused resource
+   * per process, as `<timestamp> staff-access: denied <method> for user <id>`, followed by ` on <kind>:<id>` when the
+   * refusal names a resource. Defaults to false.
+   */
+  readonly logDenied?: boolean
+  /**
+   * Absolute directory of the one Workspace staff callers use. Created empty at mount when missing; an existing
+   * directory is accepted only when it is empty or was prepared by this plugin. Defaults to
+   * `staff-workspace` under the Harness home.
+   */
+  readonly workspaceDir?: string
 }
 
 /** The service this plugin provides under `staffSessions`. */
@@ -52,6 +66,10 @@ const DEFAULT_TTL_MS = 60_000
 const DEFAULT_SWEEP_INTERVAL_MS = 30_000
 /** Largest delay `setInterval` accepts; a larger value fires at once. */
 const MAX_TIMER_MS = 2_147_483_647
+/** Most distinct denied (method, user, resource) triples remembered; the oldest is forgotten first. */
+const LOGGED_DENIAL_LIMIT = 2000
+/** Named logger whose denial lines `logDenied` writes to stderr. */
+const DENIAL_LOGGER = 'staff-access'
 
 /** Config with every default applied and every value checked. */
 interface Settings {
@@ -60,6 +78,7 @@ interface Settings {
   readonly roles: readonly string[]
   readonly ttlMs: number
   readonly sweepIntervalMs: number
+  readonly logDenied: boolean
 }
 
 /**
@@ -73,8 +92,22 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('staff-access: ownersFile is required')
   }
   const settings = resolveSettings(config)
+  const workspaceDir = resolveStaffWorkspaceDir(config.workspaceDir)
+  prepareStaffWorkspaceDir(workspaceDir)
   const owners = createSessionOwnerIndex({ file: config.ownersFile })
   ctx.provide('staffSessions', { owners })
+  // Set once the registry holds the shared Workspace; until then no staff binding or create is admitted.
+  let sharedWorkspace: WorkspaceId | undefined
+  const workspaceId = (): WorkspaceId | undefined => sharedWorkspace
+  ctx.inject(['workspaceRegistry'], (scope) => {
+    scope.effect(() => () => { sharedWorkspace = undefined }, 'staff-access: shared workspace')
+    scope.workspaceRegistry.create(workspaceDir).then(
+      (workspace) => { sharedWorkspace = workspace.id },
+      (error: unknown) => {
+        ctx.logger.error(`staff-access: could not register the staff Workspace: ${error instanceof Error ? error.message : String(error)}`)
+      },
+    )
+  })
   const authenticator = createDjangoStaffAuthenticator({
     baseUrl: settings.baseUrl,
     cookieName: settings.cookieName,
@@ -82,8 +115,8 @@ export function apply(ctx: Context, config: Config): void {
     ttlMs: settings.ttlMs,
   })
   ctx.inject(['remoteAccess'], (scope) => {
-    scope.remoteAccess.registerPolicy('staff', createStaffPolicy({ owners }))
-    admitStaffCreates(scope, { owners })
+    scope.remoteAccess.registerPolicy('staff', createStaffPolicy({ owners, workspaceId }))
+    admitStaffCreates(scope, { owners, workspaceId })
   })
   ctx.inject(['connection', 'agents', 'remoteAccess'], (scope) => {
     const admission = createStaffAdmission({ authenticator, cookieName: settings.cookieName, owners, scope })
@@ -96,6 +129,39 @@ export function apply(ctx: Context, config: Config): void {
         admission.dispose()
       }
     }, 'staff-access: revocation sweep')
+  })
+  if (settings.logDenied) logDeniedCalls(ctx)
+}
+
+/**
+ * Write each Remote call or event the staff policy refuses for a staff caller to stderr, once per method, user, and resource.
+ * The Host registers no console exporter, so this plugin's own exporter prints its named logger's lines only.
+ * The line carries the endpoint and the numeric user id only; owner and other principal kinds are ignored.
+ * @param ctx - Host Context whose `remote-access/denied` events are observed; the exporter ends with its fiber.
+ */
+function logDeniedCalls(ctx: Context): void {
+  const logger = ctx.logger(DENIAL_LOGGER)
+  ctx.logger.exporter({
+    // 2 is the Cordis INFO level; the name check below keeps other loggers out of stderr.
+    levels: { [DENIAL_LOGGER]: 2 },
+    export: (message) => {
+      if (message.name !== DENIAL_LOGGER) return
+      process.stderr.write(`${new Date(message.ts).toISOString()} ${String(message.args[0])}\n`)
+    },
+  })
+  const logged = new Set<string>()
+  ctx.on('remote-access/denied', (principal, action, resource) => {
+    if (principal.kind !== 'staff') return
+    const target = resource === undefined ? ''
+      : resource.kind === 'global' ? ' on global' : ` on ${resource.kind}:${String(resource.id)}`
+    const key = `${action}\n${principal.userId}\n${target}`
+    if (logged.has(key)) return
+    if (logged.size >= LOGGED_DENIAL_LIMIT) {
+      const oldest = logged.values().next().value
+      if (oldest !== undefined) logged.delete(oldest)
+    }
+    logged.add(key)
+    logger.info(`staff-access: denied ${action} for user ${principal.userId}${target}`)
   })
 }
 
@@ -114,7 +180,20 @@ function resolveSettings(config: Config): Settings {
   assertDelay(ttlMs, 'ttlMs')
   const sweepIntervalMs = config.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
   assertDelay(sweepIntervalMs, 'sweepIntervalMs')
-  return { baseUrl: originOf(config.djangoBaseUrl), cookieName, roles, ttlMs, sweepIntervalMs }
+  const logDenied = resolveLogDenied(config.logDenied)
+  return { baseUrl: originOf(config.djangoBaseUrl), cookieName, roles, ttlMs, sweepIntervalMs, logDenied }
+}
+
+/**
+ * Default and check the denial logging switch.
+ * @param value - configured `logDenied`, or undefined when unset.
+ * @returns the switch, false when unset.
+ * @throws Error when the value is not a boolean.
+ */
+function resolveLogDenied(value: boolean | undefined): boolean {
+  const logDenied = value ?? false
+  if (typeof logDenied !== 'boolean') throw new Error('staff-access: logDenied must be true or false')
+  return logDenied
 }
 
 /**

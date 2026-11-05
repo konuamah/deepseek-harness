@@ -32,6 +32,7 @@ import {
   hasApiSessionSubagentOwner,
   type ApiSessionCreated,
 } from './agent.ts'
+import { CreateAnnouncements } from './create-announcements.ts'
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
@@ -93,12 +94,14 @@ export class SessionCommandController {
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
+    private readonly announcements: CreateAnnouncements = new CreateAnnouncements(() => undefined),
   ) {}
 
   /**
    * Create one ordinary Session for a new conversation, reusing the named
    * blank Session while it is an unarchived member of the requested Workspace.
-   * @param request - optional blank Session to reuse, location, and Agent preset.
+   * @param input - optional blank Session to reuse, location, and Agent preset, before admission.
+   * @param principal - non-owner caller of the create; undefined for the owner.
    * @returns the created or reused Session identity and its preset when configured.
    */
   async create(input: SessionCreateRequest, principal?: Principal): Promise<SessionCreateValue> {
@@ -118,10 +121,14 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
+    // A non-owner create names its Session before the Agent exists, so its list announcements can wait for the owner record.
+    const held = principal !== undefined
+    const namedId = request.sessionId ?? (held ? brandString<SessionId>(`session-${randomUUID()}`) : undefined)
+    if (held && namedId !== undefined) this.announcements.hold(namedId)
     let created: ApiSessionCreated
     try {
       created = await this.agents.createSession({
-        ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+        ...(namedId === undefined ? {} : { sessionId: namedId }),
         cwd,
         ...(request.agentPreset === undefined ? {} : { agentPreset: request.agentPreset }),
         reusable: sessionId => !this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)
@@ -129,19 +136,26 @@ export class SessionCommandController {
           && call.reusable(sessionId),
       })
     } catch (error) {
+      if (held && namedId !== undefined) this.announcements.forget(namedId)
       this.rejectCreation(error)
     }
     const sessionId = created.agent.id
     try {
       await this.ctx.parallel('api-session/created', sessionId, call.principal)
     } catch (error) {
-      await this.agents.disposeCreated(created.agent)
+      if (held) this.announcements.discard(sessionId)
+      try {
+        await this.agents.disposeCreated(created.agent)
+      } finally {
+        if (held) this.announcements.forget(sessionId)
+      }
       throw new RemoteError(
         'gateway/internal',
         `session "${sessionId}" was not kept because a create listener failed: ${String(error)}`,
         { sessionId },
       )
     }
+    if (held) this.announcements.release(sessionId)
     if (workspace !== undefined) {
       try {
         await workspace.attachSession(sessionId)
