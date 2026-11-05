@@ -9,7 +9,7 @@
  */
 import { ConfirmApiError, type ConfirmApi, type FailureKind } from './api.ts'
 import type { CardSink } from './confirm-store.ts'
-import type { ActionSpec, PreparedBatch } from './model.ts'
+import { shownName, type ActionSpec, type PreparedBatch } from './model.ts'
 
 function kindOf(error: unknown): FailureKind {
   return error instanceof ConfirmApiError ? error.kind : 'unavailable'
@@ -29,15 +29,16 @@ function failureOf(results: readonly PromiseSettledResult<unknown>[]): FailureKi
  * after sign-in): it reloads and keeps what staff have typed.
  * @param api - the network faces.
  * @param sink - the store's state changes.
+ * @param spec - the action the batch is for; picks which summaries to load.
  * @param batch - the prepare tool's result; its id is the card's key and its records are the ones to name.
  * @returns once the card is in a settled phase.
  */
-export async function openCard(api: ConfirmApi, sink: CardSink, batch: PreparedBatch): Promise<void> {
+export async function openCard(api: ConfirmApi, sink: CardSink, spec: ActionSpec, batch: PreparedBatch): Promise<void> {
   const key = batch.pendingActionId
   sink.begin(key)
   const [pending, summaries] = await Promise.allSettled([
     api.loadPending(key),
-    api.loadSummaries(batch.eligible.map(record => record.id)),
+    api.loadSummaries(batch.eligible.map(record => record.id), spec.resource),
   ])
   if (pending.status === 'fulfilled' && summaries.status === 'fulfilled') {
     sink.loaded(key, pending.value, summaries.value)
@@ -80,7 +81,7 @@ export async function confirmCard(
   }
   try {
     // Show the statuses Django now holds; a failure here must not hide the outcomes already recorded.
-    sink.summaries(key, await api.loadSummaries(ids))
+    sink.summaries(key, await api.loadSummaries(ids, spec.resource))
   } catch {
     // The per-record outcomes already tell staff what happened.
   }
@@ -119,7 +120,8 @@ export async function openList(api: ConfirmApi, sink: CardSink, key: string, ids
   try {
     const names: Record<number, string> = {}
     for (const { id, name } of await api.loadSummaries(ids)) {
-      if (name.trim() !== '' && !name.includes('@')) names[id] = name
+      const shown = shownName(name)
+      if (shown !== undefined) names[id] = shown
     }
     sink.listLoaded(key, names)
   } catch {

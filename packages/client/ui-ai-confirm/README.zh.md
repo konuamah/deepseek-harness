@@ -1,5 +1,5 @@
 ---
-description: "CInHEd 工具服务三个 prepare 工具的网页确认卡片：显示已准备的批次和姓名，允许员工修改原因，并在点击后写入。"
+description: "CInHEd 工具服务六个 prepare 工具的网页确认卡片：显示已准备的批次和姓名，允许员工修改原因，并在点击后写入。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject` 和 `prepare_request_documents` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每位申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。模型只看到工具结果，从不接触姓名、令牌或写入结果。
+`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document` 和 `prepare_reject_document` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。模型只看到工具结果，从不接触姓名、令牌或写入结果。
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject` 和 `..._prepare_request_documents`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
+| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject`、`..._prepare_request_documents`、`..._prepare_cancel`、`..._prepare_verify_document` 和 `..._prepare_reject_document`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
 | `toolsPath` | `/tools/pending` | 反向代理转发到工具服务待处理批次路由的页面路径。 |
 | `apiPath` | `/api/v1` | 反向代理转发到 Django API 的页面路径。 |
 | `signInUrl` | `/login` | 使用账号、密码和双因素认证登录员工的页面。在新标签页中打开。 |
@@ -45,7 +45,9 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 ### 员工看到的内容
 
-已准备的批次会显示每条记录的姓名、编号、项目，以及每条记录将获得的变更（例如"Under review → Approved"）。工具服务跳过的记录会列出其原因。拒绝和请求材料的操作会显示一个原因字段，初始内容为 AI 的草稿。请求材料时，原因为空则无法确认。
+已准备的批次会显示每条记录的姓名、编号、项目，以及每条记录将获得的变更（例如"Under review → Approved"）。工具服务跳过的记录会列出其原因。拒绝、请求材料和拒收材料的操作会显示一个原因字段，初始内容为 AI 的草稿。请求材料或拒收材料时，原因为空则无法确认。
+
+取消申请、核验材料和拒收材料会多显示一行警告：取消申请无法撤销，且不会通知申请人；核验或拒收材料会通过电子邮件通知申请人，拒收时原因会按原文发送，申请状态可能变为“需补交材料”。材料批次中的编号是材料编号，每行显示姓名、编号、材料类型和状态变更（例如“Pending review → Verified”），数据来自仅限员工的材料摘要调用。姓名为空或看起来像电子邮件地址时，显示为破折号。
 
 确认按以下顺序执行：检查登录状态并铸造写入令牌，使用掉该批次，然后一次写入一条记录。每条记录都有自己的结果（已变更，或 Django 拒绝的原因）。取消会使用掉该批次但不写入。已过期、已使用或无法加载的批次会说明原因，并显示每位申请人的当前状态。
 
@@ -69,7 +71,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 ### Registration
 
-`apply` 注册一对词典（`zh`、`en`）以及每个 prepare 工具和每个只读工具一个 `tool.call.toolview` 条目，所有条目共享一个已声明的 Session store。每个条目的 `inject` 面携带网络面、它所代表的操作以及登录路径。该包只导出 `apply`、`inject` 和 `Config`。
+`apply` 注册一对词典（`zh`、`en`）以及每个 prepare 工具和每个只读工具一个 `tool.call.toolview` 条目（每个操作的 `resource`，即申请或材料，决定写入路径和摘要调用），所有条目共享一个已声明的 Session store。每个条目的 `inject` 面携带网络面、它所代表的操作以及登录路径。该包只导出 `apply`、`inject` 和 `Config`。
 
 ### Flow
 
@@ -102,7 +104,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 
 #### What the model sees
 
-本包不向模型提供任何内容。`prepare_approve`、`prepare_reject` 和 `prepare_request_documents` 的结果由工具服务写入，并以普通工具输出的形式到达模型：`pendingActionId`、带状态的 `eligible` 和 `skipped` 记录编号，以及 `expiresAt`。其中不含姓名，也不含申请人的任何自由文本。确认、写入令牌、姓名以及每次写入的结果都保留在浏览器和 Django 中，因此模型只有在之后调用读取工具时，才能得知员工是否确认。
+本包不向模型提供任何内容。六个 prepare 工具的结果由工具服务写入，并以普通工具输出的形式到达模型：`pendingActionId`、带状态的 `eligible` 和 `skipped` 记录编号，以及 `expiresAt`。其中不含姓名，也不含申请人的任何自由文本。确认、写入令牌、姓名以及每次写入的结果都保留在浏览器和 Django 中，因此模型只有在之后调用读取工具时，才能得知员工是否确认。
 
 #### Token effect
 

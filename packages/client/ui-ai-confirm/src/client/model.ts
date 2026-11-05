@@ -1,5 +1,5 @@
 /**
- * What the confirm card understands about a prepared batch: the three prepare tools, the batch the
+ * What the confirm card understands about a prepared batch: the six prepare tools, the batch the
  * tool service describes in its result text, and the display keys for application statuses.
  * Pure data and validation; nothing here reads the Session, the network or the DOM.
  */
@@ -7,29 +7,53 @@
 /** How a prepare tool treats the reason text. */
 export type ReasonRule = 'none' | 'optional' | 'required'
 
+/** What a prepared batch is made of: applications, or the documents of applications. */
+export type Resource = 'application' | 'document'
+
 /** One prepare tool and the Django write it stands for. */
 export interface ActionSpec {
   /** Tool name without the `mcp__<server>__` prefix. */
   readonly tool: string
   /** Action id Django's write token is minted for. */
   readonly action: string
-  /** Last path segment of the Django write call: `/applications/<id>/<endpoint>/`. */
+  /** What the batch's ids are; picks the write path and the staff summaries call. */
+  readonly resource: Resource
+  /** Last path segment of the Django write call: `/<applications|application-documents>/<id>/<endpoint>/`. */
   readonly endpoint: string
   /** Locale key prefix for this action's copy. */
-  readonly copy: 'approve' | 'reject' | 'requestDocuments'
+  readonly copy: 'approve' | 'reject' | 'requestDocuments' | 'cancel' | 'verifyDocument' | 'rejectDocument'
   readonly reason: ReasonRule
 }
 
-/** The three prepare tools, in the order the tool service lists them. */
+/** The six prepare tools, in the order the tool service lists them. */
 export const ACTIONS: readonly ActionSpec[] = [
-  { tool: 'prepare_approve', action: 'application.approve', endpoint: 'approve', copy: 'approve', reason: 'none' },
-  { tool: 'prepare_reject', action: 'application.reject', endpoint: 'reject', copy: 'reject', reason: 'optional' },
+  {
+    tool: 'prepare_approve', action: 'application.approve', resource: 'application',
+    endpoint: 'approve', copy: 'approve', reason: 'none',
+  },
+  {
+    tool: 'prepare_reject', action: 'application.reject', resource: 'application',
+    endpoint: 'reject', copy: 'reject', reason: 'optional',
+  },
   {
     tool: 'prepare_request_documents',
     action: 'application.request_documents',
+    resource: 'application',
     endpoint: 'request_documents',
     copy: 'requestDocuments',
     reason: 'required',
+  },
+  {
+    tool: 'prepare_cancel', action: 'application.cancel', resource: 'application',
+    endpoint: 'cancel', copy: 'cancel', reason: 'none',
+  },
+  {
+    tool: 'prepare_verify_document', action: 'application_document.verify', resource: 'document',
+    endpoint: 'verify', copy: 'verifyDocument', reason: 'none',
+  },
+  {
+    tool: 'prepare_reject_document', action: 'application_document.reject', resource: 'document',
+    endpoint: 'reject_document', copy: 'rejectDocument', reason: 'required',
   },
 ]
 
@@ -191,6 +215,7 @@ const STATUS_KEYS = {
   REJECTED: 'status.rejected',
   WITHDRAWN: 'status.withdrawn',
   CANCELLED: 'status.cancelled',
+  VERIFIED: 'status.verified',
 } as const
 
 /** Locale key of a known application status. */
@@ -205,11 +230,14 @@ export function statusKey(status: string): StatusKey | undefined {
   return Object.hasOwn(STATUS_KEYS, status) ? STATUS_KEYS[status as keyof typeof STATUS_KEYS] : undefined
 }
 
-/** The status a successful write leaves the application in. */
+/** The status a successful write leaves the record in. */
 const RESULT_STATUS: Readonly<Record<string, string>> = {
   'application.approve': 'APPROVED',
   'application.reject': 'REJECTED',
   'application.request_documents': 'DOCUMENTS_REQUIRED',
+  'application.cancel': 'CANCELLED',
+  'application_document.verify': 'VERIFIED',
+  'application_document.reject': 'REJECTED',
 }
 
 /**
@@ -219,4 +247,14 @@ const RESULT_STATUS: Readonly<Record<string, string>> = {
  */
 export function statusAfter(action: string): string | undefined {
   return RESULT_STATUS[action]
+}
+
+/**
+ * A name that is safe to show: staff summaries fall back to the login email when an account has no
+ * name, so an empty name or one holding `@` is never shown.
+ * @param name - the name from the staff call.
+ * @returns the name, or undefined when it must not be shown.
+ */
+export function shownName(name: string): string | undefined {
+  return name.trim() !== '' && !name.includes('@') ? name : undefined
 }

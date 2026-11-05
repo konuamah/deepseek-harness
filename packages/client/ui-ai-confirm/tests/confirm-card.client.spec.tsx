@@ -5,7 +5,9 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ConfirmApi, RecordOutcome } from '../src/client/api.ts'
 import { ConfirmCard } from '../src/client/ConfirmCard.tsx'
-import { APPROVE, REJECT, REQUEST_DOCUMENTS, batchText, fakeApi, newStore, props, settle } from './fixtures.tsx'
+import {
+  APPROVE, CANCEL, DOC_SUMMARIES, REJECT, REJECT_DOCUMENT, REQUEST_DOCUMENTS, VERIFY_DOCUMENT, batchText, fakeApi, newStore, props, settle,
+} from './fixtures.tsx'
 
 afterEach(cleanup)
 
@@ -302,5 +304,111 @@ describe('cancelling', () => {
     expect(calls).toEqual(['loadPending', 'loadSummaries', 'claim'])
     expect(screen.getByText('Cancelled. Nothing was changed.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+  })
+})
+
+describe('the cancel and document cards', () => {
+  const docBatch = (action: string) => batchText({ action, eligible: [{ id: 12, status: 'PENDING' }, { id: 13, status: 'PENDING' }] })
+
+  it('shows cancel rows like approve, with the irreversible warning', async () => {
+    const { api, resources } = fakeApi()
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: CANCEL, text: batchText({ action: 'application.cancel' }) })} />)
+    await settle()
+
+    expect(screen.getByRole('heading', { name: 'Cancel 2 applications' })).toBeTruthy()
+    expect(screen.getByText('Under review → Cancelled')).toBeTruthy()
+    expect(screen.getByText('APP-7 · NUR')).toBeTruthy()
+    expect(screen.getByText('This cannot be undone and the applicant is not told.')).toBeTruthy()
+    expect(screen.queryByLabelText(REASON)).toBeNull()
+    expect(resources).toEqual(['application'])
+  })
+
+  it('shows verify rows from the document summaries, with the email warning and no reason', async () => {
+    const { api, resources, minted, calls } = fakeApi({ summaries: DOC_SUMMARIES, pending: { ids: [12, 13] } })
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: VERIFY_DOCUMENT, text: docBatch('application_document.verify') })} />)
+    await settle()
+
+    expect(screen.getByRole('heading', { name: 'Verify 2 documents' })).toBeTruthy()
+    const records = within(screen.getByRole('list', { name: 'Applications in this batch' }))
+    expect(records.getByText('Ama Fakename')).toBeTruthy()
+    expect(records.getByText('APP2026001 · Transcript')).toBeTruthy()
+    expect(records.getAllByText('Pending review → Verified')).toHaveLength(2)
+    expect(screen.getByText('The applicant is emailed.')).toBeTruthy()
+    expect(screen.queryByLabelText(REASON)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await settle()
+    await settle()
+
+    expect(resources).toEqual(['document', 'document'])
+    expect(minted).toEqual([{ ids: [12, 13], reason: '' }])
+    expect(calls).toContain('write:12')
+  })
+
+  it('shows an empty name as an em dash and never an email', async () => {
+    const summaries = [{ ...DOC_SUMMARIES[0]!, name: 'ama@example.com' }, DOC_SUMMARIES[1]!]
+    const { api } = fakeApi({ summaries, pending: { ids: [12, 13] } })
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: VERIFY_DOCUMENT, text: docBatch('application_document.verify') })} />)
+    await settle()
+
+    expect(screen.getAllByText('—')).toHaveLength(2)
+    expect(screen.queryByText('ama@example.com')).toBeNull()
+  })
+
+  it('names a document with no summary by its id', async () => {
+    const { api } = fakeApi({ summaries: [], pending: { ids: [12, 13] } })
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: VERIFY_DOCUMENT, text: docBatch('application_document.verify') })} />)
+    await settle()
+
+    expect(screen.getByText('Document 12')).toBeTruthy()
+  })
+
+  it('lists a skipped document by document id', async () => {
+    const { api } = fakeApi({ summaries: DOC_SUMMARIES, pending: { ids: [12] } })
+    const text = batchText({
+      action: 'application_document.verify',
+      eligible: [{ id: 12, status: 'PENDING' }],
+      skipped: [{ id: 99, status: 'VERIFIED', why: 'already verified' }],
+    })
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: VERIFY_DOCUMENT, text })} />)
+    await settle()
+
+    expect(screen.getByText('Document 99')).toBeTruthy()
+    expect(screen.getByText('Verified')).toBeTruthy()
+  })
+
+  it('requires an editable reason for reject, and warns that it is sent as written', async () => {
+    const { api, minted } = fakeApi({ summaries: DOC_SUMMARIES, pending: { ids: [12, 13], reason: '' } })
+
+    render(<ConfirmCard {...props({ store: newStore(), api, spec: REJECT_DOCUMENT, text: docBatch('application_document.reject') })} />)
+    await settle()
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+
+    expect(screen.getByRole('heading', { name: 'Reject 2 documents' })).toBeTruthy()
+    expect(screen.getByText(/sent to the applicant as written/)).toBeTruthy()
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('A reason is required.')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText(REASON), { target: { value: 'Scan is cut off' } })
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(confirm)
+    await settle()
+    await settle()
+
+    expect(minted).toEqual([{ ids: [12, 13], reason: 'Scan is cut off' }])
+  })
+
+  it('shows no extra warning on the original three actions', async () => {
+    const { api } = fakeApi()
+
+    render(<ConfirmCard {...props({ store: newStore(), api })} />)
+    await settle()
+
+    expect(screen.queryByRole('note')).toBeNull()
   })
 })

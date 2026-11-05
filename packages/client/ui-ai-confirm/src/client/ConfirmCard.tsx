@@ -2,12 +2,12 @@ import { useEffect, useId } from 'react'
 import { Button, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { ApplicationSummary, ConfirmApi, RecordOutcome } from './api.ts'
+import type { ConfirmApi, RecordOutcome, Summary } from './api.ts'
 import { cancelCard, confirmCard, openCard } from './controller.ts'
 import { EMPTY_CARD, type CardState, type createConfirmStore } from './confirm-store.ts'
 import type { AiConfirmKey } from './locales.ts'
 import {
-  MAX_REASON_LENGTH, parsePrepared, statusAfter, statusKey, type ActionSpec, type PreparedBatch,
+  MAX_REASON_LENGTH, parsePrepared, shownName, statusAfter, statusKey, type ActionSpec, type PreparedBatch,
 } from './model.ts'
 import css from './ConfirmCard.module.css'
 
@@ -30,7 +30,17 @@ const TITLES = {
   approve: ['title.approve.one', 'title.approve.other'],
   reject: ['title.reject.one', 'title.reject.other'],
   requestDocuments: ['title.requestDocuments.one', 'title.requestDocuments.other'],
+  cancel: ['title.cancel.one', 'title.cancel.other'],
+  verifyDocument: ['title.verifyDocument.one', 'title.verifyDocument.other'],
+  rejectDocument: ['title.rejectDocument.one', 'title.rejectDocument.other'],
 } as const satisfies Record<ActionSpec['copy'], readonly [AiConfirmKey, AiConfirmKey]>
+
+/** What an action does that staff must know before confirming; the first three have no extra warning. */
+const WARNINGS: Partial<Record<ActionSpec['copy'], AiConfirmKey>> = {
+  cancel: 'warning.cancel',
+  verifyDocument: 'warning.verifyDocument',
+  rejectDocument: 'warning.rejectDocument',
+}
 
 /** The result's text parts joined; a non-text part carries nothing this card reads. */
 export function resultText(block: Extract<ConfirmCardProps, { phase: 'result' }>['block']): string {
@@ -96,11 +106,12 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
   const opened = stored !== undefined
   useEffect(() => {
     // The card loads its batch once; a remount while loading or after finishing finds the stored state.
-    if (!opened) void openCard(api, actions, batch)
-  }, [opened, api, actions, batch])
+    if (!opened) void openCard(api, actions, spec, batch)
+  }, [opened, api, actions, spec, batch])
 
   const view = viewOf(card, spec, batch)
   const [one, other] = TITLES[spec.copy]
+  const warning = WARNINGS[spec.copy]
   return (
     <section className={css.card} data-tool="ai-confirm" data-state={card.phase} aria-labelledby={titleId}>
       <h3 id={titleId} className={css.title}>
@@ -112,6 +123,7 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
             key={record.id}
             t={t}
             id={record.id}
+            resource={spec.resource}
             fallbackStatus={record.status}
             summary={card.summaries.find(summary => summary.id === record.id)}
             after={statusAfter(spec.action)}
@@ -120,7 +132,8 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
           />
         ))}
       </ul>
-      {batch.skipped.length > 0 && <SkippedList t={t} batch={batch} />}
+      {batch.skipped.length > 0 && <SkippedList t={t} batch={batch} resource={spec.resource} />}
+      {warning !== undefined && view.editable && <p className={css.warning} role="note">{t(warning)}</p>}
       {spec.reason !== 'none' && view.editable && (
         <ReasonField
           t={t}
@@ -135,7 +148,7 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
         card={card}
         total={view.total}
         signInUrl={signInUrl}
-        onRetry={() => { void openCard(api, actions, batch) }}
+        onRetry={() => { void openCard(api, actions, spec, batch) }}
       />
       {view.editable && (
         <Actions
@@ -203,20 +216,22 @@ function Actions({ t, busy, confirmDisabled, onCancel, onConfirm }: ActionsProps
 interface RecordRowProps {
   readonly t: Translate
   readonly id: number
+  readonly resource: ActionSpec['resource']
   readonly fallbackStatus: string
-  readonly summary: ApplicationSummary | undefined
+  readonly summary: Summary | undefined
   readonly after: string | undefined
   readonly phase: CardState['phase']
   readonly outcome: RecordOutcome | undefined
 }
 
-function RecordRow({ t, id, fallbackStatus, summary, after, phase, outcome }: RecordRowProps) {
+function RecordRow({ t, id, resource, fallbackStatus, summary, after, phase, outcome }: RecordRowProps) {
   const current = summary?.status ?? fallbackStatus
   const pending = (phase === 'ready' || phase === 'confirming') && outcome === undefined
-  const meta = summary === undefined ? '' : `${summary.reference} · ${summary.program.code}`
+  const meta = summary === undefined ? '' : `${summary.reference} · ${'documentType' in summary ? summary.documentType : summary.program.code}`
+  const name = summary === undefined ? t(UNNAMED[resource], { id }) : (shownName(summary.name) ?? '—')
   return (
     <li className={css.record}>
-      <span className={css.name}>{summary?.name ?? t('record.unnamed', { id })}</span>
+      <span className={css.name}>{name}</span>
       {meta !== '' && <span className={css.meta}>{meta}</span>}
       <span className={css.status}>
         {pending && after !== undefined
@@ -242,14 +257,16 @@ function OutcomeTag({ t, outcome }: { readonly t: Translate; readonly outcome: R
   }
 }
 
-function SkippedList({ t, batch }: { readonly t: Translate; readonly batch: PreparedBatch }) {
+const UNNAMED = { application: 'record.unnamed', document: 'record.unnamedDocument' } as const
+
+function SkippedList({ t, batch, resource }: { readonly t: Translate; readonly batch: PreparedBatch; readonly resource: ActionSpec['resource'] }) {
   return (
     <div className={css.skipped}>
       <p className={css.skippedTitle}>{t('skipped.title')}</p>
       <ul>
         {batch.skipped.map(record => (
           <li key={record.id} className={css.skippedRow}>
-            <span>{t('record.unnamed', { id: record.id })}</span>
+            <span>{t(UNNAMED[resource], { id: record.id })}</span>
             {record.status !== null && <Tag tone="neutral">{statusLabel(t, record.status)}</Tag>}
             <span className={css.detail}>{record.why}</span>
           </li>

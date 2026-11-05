@@ -76,7 +76,7 @@ describe('openCard', () => {
     const store = newStore()
     const { api } = fakeApi({})
 
-    await openCard(api, store.actions, BATCH)
+    await openCard(api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]).toMatchObject({ phase: 'ready', pending: PENDING, summaries: SUMMARIES, reason: 'AI draft' })
   })
@@ -85,7 +85,7 @@ describe('openCard', () => {
     const store = newStore()
     store.actions.editReason(KEY, 'My own words')
 
-    await openCard(fakeApi({}).api, store.actions, BATCH)
+    await openCard(fakeApi({}).api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]).toMatchObject({ phase: 'ready', reason: 'My own words', edited: true })
   })
@@ -93,7 +93,7 @@ describe('openCard', () => {
   it('still shows names and statuses when the batch has expired', async () => {
     const store = newStore()
 
-    await openCard(fakeApi({ pending: 'expired' }).api, store.actions, BATCH)
+    await openCard(fakeApi({ pending: 'expired' }).api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]).toMatchObject({ phase: 'expired', summaries: SUMMARIES, pending: null })
   })
@@ -102,8 +102,8 @@ describe('openCard', () => {
     const first = newStore()
     const second = newStore()
 
-    await openCard(fakeApi({ pending: 'sign-in', summaries: 'unavailable' }).api, first.actions, BATCH)
-    await openCard(fakeApi({ pending: 'unavailable', summaries: 'sign-in' }).api, second.actions, BATCH)
+    await openCard(fakeApi({ pending: 'sign-in', summaries: 'unavailable' }).api, first.actions, APPROVE, BATCH)
+    await openCard(fakeApi({ pending: 'unavailable', summaries: 'sign-in' }).api, second.actions, APPROVE, BATCH)
 
     expect(first.getSnapshot().cards[KEY]?.phase).toBe('sign-in')
     expect(second.getSnapshot().cards[KEY]?.phase).toBe('sign-in')
@@ -112,7 +112,7 @@ describe('openCard', () => {
   it('reports the tool service failure when the names loaded but the batch did not', async () => {
     const store = newStore()
 
-    await openCard(fakeApi({ pending: 'refused' }).api, store.actions, BATCH)
+    await openCard(fakeApi({ pending: 'refused' }).api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]?.phase).toBe('refused')
   })
@@ -120,7 +120,7 @@ describe('openCard', () => {
   it('reports the names failure when the batch loaded but the names did not', async () => {
     const store = newStore()
 
-    await openCard(fakeApi({ summaries: 'unavailable' }).api, store.actions, BATCH)
+    await openCard(fakeApi({ summaries: 'unavailable' }).api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]).toMatchObject({ phase: 'unavailable', summaries: [] })
   })
@@ -128,7 +128,7 @@ describe('openCard', () => {
   it('prefers the batch’s failure when both fail for reasons other than sign-in', async () => {
     const store = newStore()
 
-    await openCard(fakeApi({ pending: 'expired', summaries: 'unavailable' }).api, store.actions, BATCH)
+    await openCard(fakeApi({ pending: 'expired', summaries: 'unavailable' }).api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]?.phase).toBe('expired')
   })
@@ -140,7 +140,7 @@ describe('openCard', () => {
       loadPending: async () => { throw new Error('not a classified error') },
     }
 
-    await openCard(api, store.actions, BATCH)
+    await openCard(api, store.actions, APPROVE, BATCH)
 
     expect(store.getSnapshot().cards[KEY]?.phase).toBe('unavailable')
   })
@@ -151,7 +151,7 @@ describe('openCard', () => {
     const gate = new Promise<void>((resolve) => { release = resolve })
     const api: ConfirmApi = { ...fakeApi({}).api, loadPending: async () => { await gate; return PENDING } }
 
-    const opening = openCard(api, store.actions, BATCH)
+    const opening = openCard(api, store.actions, APPROVE, BATCH)
     expect(store.getSnapshot().cards[KEY]?.phase).toBe('loading')
     release()
     await opening

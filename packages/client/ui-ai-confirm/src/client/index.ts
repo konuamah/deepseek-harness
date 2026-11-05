@@ -1,7 +1,7 @@
 /**
- * AI confirm card, browser half. The CInHEd tool service prepares approve, reject and request-documents
- * batches and changes nothing; this plugin registers a card for each of those three prepare tools in
- * ui-tool's keyed `tool.call.toolview` slot. The card shows the batch with names, lets the staff
+ * AI confirm card, browser half. The CInHEd tool service prepares approve, reject, request-documents, cancel,
+ * verify-document and reject-document batches and changes nothing; this plugin registers a card for each of those six prepare
+ * tools in ui-tool's keyed `tool.call.toolview` slot. The card shows the batch with names, lets the staff
  * member edit the reason, and on Confirm mints a short-lived write token with the staff session, uses
  * the batch up and writes each record.
  *

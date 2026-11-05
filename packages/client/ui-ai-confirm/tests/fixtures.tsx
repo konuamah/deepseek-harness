@@ -2,19 +2,26 @@
 import { useSyncExternalStore } from 'react'
 import { act } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { ConfirmApiError, type ApplicationSummary, type ConfirmApi, type FailureKind, type PendingView, type RecordOutcome } from '../src/client/api.ts'
+import { ConfirmApiError, type ApplicationSummary, type ConfirmApi, type DocumentSummary, type FailureKind, type PendingView, type RecordOutcome, type Summary } from '../src/client/api.ts'
 import { createConfirmStore } from '../src/client/confirm-store.ts'
 import type { ConfirmCardProps } from '../src/client/ConfirmCard.tsx'
 import { en } from '../src/client/locales.ts'
 import { ACTIONS, type ActionSpec } from '../src/client/model.ts'
 
-export const [APPROVE, REJECT, REQUEST_DOCUMENTS] = ACTIONS as [ActionSpec, ActionSpec, ActionSpec]
+export const [APPROVE, REJECT, REQUEST_DOCUMENTS, CANCEL, VERIFY_DOCUMENT, REJECT_DOCUMENT] = ACTIONS as unknown as [
+  ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec,
+]
 export const KEY = '0b1d2c3e-4f50-4a61-8b72-93a4b5c6d7e8'
 export const t = makeTranslate(en)
 
 export const SUMMARIES: readonly ApplicationSummary[] = [
   { id: 7, name: 'Ama Mensah', reference: 'APP-7', status: 'UNDER_REVIEW', program: { code: 'NUR', name: 'Nursing' } },
   { id: 8, name: 'Kofi Owusu', reference: 'APP-8', status: 'PENDING', program: { code: 'NUR', name: 'Nursing' } },
+]
+
+export const DOC_SUMMARIES: readonly DocumentSummary[] = [
+  { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING' },
+  { id: 13, name: '', reference: 'APP2026002', documentType: 'Passport', status: 'PENDING' },
 ]
 
 interface Batch {
@@ -35,7 +42,7 @@ export const batchText = (over: Batch = {}): string =>
 
 export interface Script {
   pending?: Partial<PendingView> | FailureKind
-  summaries?: readonly ApplicationSummary[] | FailureKind
+  summaries?: readonly Summary[] | FailureKind
   mint?: FailureKind
   claim?: FailureKind
   writes?: Record<number, RecordOutcome>
@@ -44,6 +51,7 @@ export interface Script {
 /** A scripted API; `calls` records the order the card used it in, `minted` what it asked a token for. */
 export function fakeApi(script: Script = {}) {
   const calls: string[] = []
+  const resources: (string | undefined)[] = []
   const minted: { ids: readonly number[]; reason: string }[] = []
   const fail = (kind: FailureKind): never => { throw new ConfirmApiError(kind) }
   const api: ConfirmApi = {
@@ -53,8 +61,9 @@ export function fakeApi(script: Script = {}) {
       if (typeof pending === 'string') return fail(pending)
       return { id, action: 'application.approve', ids: [7, 8], reason: 'AI draft', expiresAt: 'x', ...pending }
     },
-    async loadSummaries() {
+    async loadSummaries(_ids, resource) {
       calls.push('loadSummaries')
+      resources.push(resource)
       const summaries = script.summaries ?? SUMMARIES
       return typeof summaries === 'string' ? fail(summaries) : summaries
     },
@@ -73,7 +82,7 @@ export function fakeApi(script: Script = {}) {
       return script.writes?.[id] ?? { ok: true }
     },
   }
-  return { api, calls, minted }
+  return { api, calls, minted, resources }
 }
 
 export const newStore = () => createConfirmStore().create('session')

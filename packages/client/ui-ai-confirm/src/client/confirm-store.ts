@@ -5,7 +5,7 @@
  * module exports only the factory.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ApplicationSummary, FailureKind, PendingView, RecordOutcome } from './api.ts'
+import type { FailureKind, PendingView, RecordOutcome, Summary } from './api.ts'
 
 /** Where a batch is in its flow. A failure kind is a stop the card explains. */
 export type CardPhase = 'loading' | 'ready' | 'confirming' | 'done' | 'cancelled' | FailureKind
@@ -18,7 +18,7 @@ export interface CardState {
   readonly phase: CardPhase
   /** The batch as the tool service holds it; null until it has loaded. */
   readonly pending: PendingView | null
-  readonly summaries: readonly ApplicationSummary[]
+  readonly summaries: readonly Summary[]
   /** The reason as staff have edited it. */
   readonly reason: string
   /** Whether staff have typed in the reason, so a reload does not overwrite their words. */
@@ -42,9 +42,9 @@ export interface ConfirmState {
 /** What the controller needs from the store: one method per state change. */
 export interface CardSink {
   begin(key: string): void
-  loaded(key: string, pending: PendingView, summaries: readonly ApplicationSummary[]): void
+  loaded(key: string, pending: PendingView, summaries: readonly Summary[]): void
   failed(key: string, kind: FailureKind): void
-  summaries(key: string, summaries: readonly ApplicationSummary[]): void
+  summaries(key: string, summaries: readonly Summary[]): void
   editReason(key: string, reason: string): void
   confirming(key: string, step: ConfirmStep): void
   recorded(key: string, id: number, outcome: RecordOutcome): void

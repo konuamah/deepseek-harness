@@ -4,7 +4,7 @@
  * can explain; no response text from either side is shown except Django's own refusal of a write.
  * The module takes `fetch` as a parameter, so tests drive it without a network.
  */
-import { isId, isRecord, type ActionSpec } from './model.ts'
+import { isId, isRecord, type ActionSpec, type Resource } from './model.ts'
 
 /** Why a call could not complete. */
 export type FailureKind = 'sign-in' | 'expired' | 'refused' | 'unavailable'
@@ -35,6 +35,18 @@ export interface ApplicationSummary {
   readonly status: string
 }
 
+/** One document as the staff card shows it; the name comes from Django with the staff session. */
+export interface DocumentSummary {
+  readonly id: number
+  readonly name: string
+  readonly reference: string
+  readonly documentType: string
+  readonly status: string
+}
+
+/** A row of the staff summaries call for either resource. */
+export type Summary = ApplicationSummary | DocumentSummary
+
 /** The result of one write. */
 export type RecordOutcome =
   | { readonly ok: true }
@@ -55,8 +67,8 @@ export interface ConfirmApiOptions {
 export interface ConfirmApi {
   /** The prepared batch; fails `sign-in`, `refused`, `expired` or `unavailable`. */
   loadPending(id: string): Promise<PendingView>
-  /** Names and current statuses for the records; fails `sign-in` or `unavailable`. */
-  loadSummaries(ids: readonly number[]): Promise<readonly ApplicationSummary[]>
+  /** Names and current statuses for the records (applications unless told otherwise); fails `sign-in` or `unavailable`. */
+  loadSummaries(ids: readonly number[], resource?: Resource): Promise<readonly Summary[]>
   /** Use the batch up so it cannot run again: a confirm does this, and so does Cancel. */
   claim(id: string): Promise<void>
   /** Mint the 2-minute write token for exactly this action, these records and this reason. */
@@ -110,6 +122,28 @@ function applicationSummary(value: unknown): ApplicationSummary {
   }
 }
 
+function documentSummary(value: unknown): DocumentSummary {
+  if (!isRecord(value) || !isId(value.id)) throw new ConfirmApiError('unavailable')
+  const { name, reference, document_type: documentType, status } = value
+  if (![name, reference, documentType, status].every(field => typeof field === 'string')) {
+    throw new ConfirmApiError('unavailable')
+  }
+  return {
+    id: value.id,
+    name: name as string,
+    reference: reference as string,
+    documentType: documentType as string,
+    status: status as string,
+  }
+}
+
+/** Where each resource's records are written and summarised (paths under `apiPath`). */
+const WRITE_SEGMENT: Record<Resource, string> = { application: 'applications', document: 'application-documents' }
+const SUMMARIES: Record<Resource, { path: string; list: string; read: (value: unknown) => Summary }> = {
+  application: { path: 'application-summaries', list: 'applications', read: applicationSummary },
+  document: { path: 'document-summaries', list: 'documents', read: documentSummary },
+}
+
 /** Django serves the CSRF token in the body (its cookie is HttpOnly); a session POST must echo it. */
 async function csrfToken(options: ConfirmApiOptions): Promise<string> {
   const response = await send(options, `${options.apiPath}/users/csrf-token/`, { method: 'GET', headers: JSON_HEADERS })
@@ -160,14 +194,16 @@ export function createConfirmApi(options: ConfirmApiOptions): ConfirmApi {
       return pendingView(await readJson(response))
     },
 
-    async loadSummaries(ids) {
-      const url = `${apiPath}/admissions/staff/application-summaries/?ids=${ids.join(',')}`
+    async loadSummaries(ids, resource = 'application') {
+      const { path, list, read } = SUMMARIES[resource]
+      const url = `${apiPath}/admissions/staff/${path}/?ids=${ids.join(',')}`
       const response = await send(options, url, { method: 'GET', headers: { Accept: 'application/json' } })
       if (response.status === 401 || response.status === 403) throw new ConfirmApiError('sign-in')
       if (!response.ok) throw new ConfirmApiError('unavailable')
       const body = await readJson(response)
-      if (!isRecord(body) || !Array.isArray(body.applications)) throw new ConfirmApiError('unavailable')
-      return body.applications.map(applicationSummary)
+      const rows = isRecord(body) ? body[list] : undefined
+      if (!Array.isArray(rows)) throw new ConfirmApiError('unavailable')
+      return rows.map(read)
     },
 
     async claim(id) {
@@ -194,7 +230,7 @@ export function createConfirmApi(options: ConfirmApiOptions): ConfirmApi {
       const body = spec.reason !== 'none' && reason !== '' ? JSON.stringify({ reason }) : '{}'
       let response: Response
       try {
-        response = await options.fetch(`${apiPath}/admissions/applications/${id}/${spec.endpoint}/`, {
+        response = await options.fetch(`${apiPath}/admissions/${WRITE_SEGMENT[spec.resource]}/${id}/${spec.endpoint}/`, {
           method: 'POST',
           headers: { ...JSON_HEADERS, Authorization: `Bearer ${token}` },
           body,

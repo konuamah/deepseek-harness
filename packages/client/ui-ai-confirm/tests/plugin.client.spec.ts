@@ -60,11 +60,14 @@ describe('apply', () => {
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
       'mcp__cinhed__prepare_request_documents',
+      'mcp__cinhed__prepare_cancel',
+      'mcp__cinhed__prepare_verify_document',
+      'mcp__cinhed__prepare_reject_document',
       'mcp__cinhed__list_applications',
       'mcp__cinhed__get_application',
     ])
-    expect(entries.slice(0, 3).every(entry => entry.component === ConfirmCard)).toBe(true)
-    expect(entries.slice(3).every(entry => entry.component === ApplicationsCard)).toBe(true)
+    expect(entries.slice(0, 6).every(entry => entry.component === ConfirmCard)).toBe(true)
+    expect(entries.slice(6).every(entry => entry.component === ApplicationsCard)).toBe(true)
     expect(entries.every(entry => entry.locale === 'aiConfirm')).toBe(true)
   })
 
@@ -73,7 +76,7 @@ describe('apply', () => {
 
     const keys = presentation.slots.entries('tool.call.toolview').map(entry => entry.options.key)
     expect(keys[0]).toBe('mcp__school_ai__prepare_approve')
-    expect(keys.slice(3)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
+    expect(keys.slice(6)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
   })
 
   it('shares one store across all the cards', async () => {
@@ -93,9 +96,12 @@ describe('apply', () => {
       return make()
     })
 
-    expect(injected.slice(0, 3).map(face => face.spec.tool)).toEqual(['prepare_approve', 'prepare_reject', 'prepare_request_documents'])
-    expect(injected.slice(0, 3).every(face => face.signInUrl === '/staff/login')).toBe(true)
-    expect(typeof injected[3]?.api).toBe('object')
+    expect(injected.slice(0, 6).map(face => face.spec.tool)).toEqual([
+      'prepare_approve', 'prepare_reject', 'prepare_request_documents',
+      'prepare_cancel', 'prepare_verify_document', 'prepare_reject_document',
+    ])
+    expect(injected.slice(0, 6).every(face => face.signInUrl === '/staff/login')).toBe(true)
+    expect(typeof injected[6]?.api).toBe('object')
     expect(injected.every(face => typeof (face.api as { claim: unknown }).claim === 'function')).toBe(true)
   })
 
@@ -107,7 +113,7 @@ describe('apply', () => {
 
   it('removes every registration when the plugin is disposed (hot-reload safety)', async () => {
     const { presentation, fiber } = await boot({ serverName: 'cinhed' })
-    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(5)
+    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(8)
 
     await fiber.dispose()
 
@@ -139,6 +145,9 @@ describe('apply', () => {
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
       'mcp__cinhed__prepare_request_documents',
+      'mcp__cinhed__prepare_cancel',
+      'mcp__cinhed__prepare_verify_document',
+      'mcp__cinhed__prepare_reject_document',
       'mcp__cinhed__list_applications',
       'mcp__cinhed__get_application',
     ])

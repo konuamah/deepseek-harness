@@ -1,5 +1,5 @@
 ---
-description: "Web confirm card for the three prepare tools of the CInHEd tool service: shows a prepared batch with names, lets staff edit the reason, and writes after a click."
+description: "Web confirm card for the six prepare tools of the CInHEd tool service: shows a prepared batch with names, lets staff edit the reason, and writes after a click."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, and `prepare_request_documents` tools as a confirm card. The card loads the prepared batch and each application's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. The model sees only the tool result and never a name, a token, or a write outcome.
+`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, and `prepare_reject_document` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. The model sees only the tool result and never a name, a token, or a write outcome.
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ The row ships `disabled: true` in the Web bundle. Turn it on in the profile patc
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, and `..._prepare_request_documents`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
+| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, `..._prepare_request_documents`, `..._prepare_cancel`, `..._prepare_verify_document`, and `..._prepare_reject_document`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
 | `toolsPath` | `/tools/pending` | Page path a reverse proxy forwards to the tool service's pending-batch routes. |
 | `apiPath` | `/api/v1` | Page path a reverse proxy forwards to Django's API. |
 | `signInUrl` | `/login` | Page that signs staff in with login and 2FA. Opened in a new tab. |
@@ -45,7 +45,9 @@ All three paths are checked at load: each must be an absolute path on the page's
 
 ### What staff see
 
-A prepared batch shows its records with name, reference, program, and the change each will get (for example, "Under review → Approved"). Records the tool service skipped are listed with its reason. Reject and request-documents show a reason field that starts from the AI's draft. A request for documents cannot be confirmed with an empty reason.
+A prepared batch shows its records with name, reference, program, and the change each will get (for example, "Under review → Approved"). Records the tool service skipped are listed with its reason. Reject, request-documents, and reject-document show a reason field that starts from the AI's draft. A request for documents or a document rejection cannot be confirmed with an empty reason.
+
+The three document and cancel actions add a warning line: cancelling an application cannot be undone and the applicant is not told; verifying or rejecting a document emails the applicant, and a rejection sends the reason as written and may move the application to documents required. Document batches list their ids as document ids, and each row shows name, reference, document type, and the status change (for example, "Pending review → Verified"), loaded from the staff-only document-summaries call. A name that is empty or looks like an email address shows as a dash.
 
 Confirm runs in this order: check the sign-in and mint the write token, use the batch up, then write one record at a time. Each record gets its own outcome (changed, or the reason Django refused). Cancel uses the batch up without writing. A batch that expired, was used, or cannot be loaded explains itself and shows each application's current status.
 
@@ -69,7 +71,7 @@ The card calls the tool service and Django on the page's own origin, so the staf
 
 ### Registration
 
-`apply` registers one dictionary pair (`zh`, `en`) and one `tool.call.toolview` entry per prepare tool and per read tool, all sharing one declared Session store. Each entry's `inject` face carries the network faces, the action it stands for, and the sign-in path. The package exports only `apply`, `inject`, and `Config`.
+`apply` registers one dictionary pair (`zh`, `en`) and one `tool.call.toolview` entry per prepare tool (each action's `resource`, application or document, picks the write path and the summaries call) and per read tool, all sharing one declared Session store. Each entry's `inject` face carries the network faces, the action it stands for, and the sign-in path. The package exports only `apply`, `inject`, and `Config`.
 
 ### Flow
 
@@ -102,7 +104,7 @@ The card derives only from the logged call and result. A result that is not a we
 
 #### What the model sees
 
-Nothing from this package. The results of `prepare_approve`, `prepare_reject`, and `prepare_request_documents`, written by the tool service, reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`. They hold no names and no free text from applicants. The confirm, the write token, the names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
+Nothing from this package. The results of the six prepare tools, written by the tool service, reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`. They hold no names and no free text from applicants. The confirm, the write token, the names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
 
 #### Token effect
 

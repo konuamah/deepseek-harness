@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { ConfirmApiError, createConfirmApi, type ConfirmApi } from '../src/client/api.ts'
 import { ACTIONS } from '../src/client/model.ts'
 
-const [APPROVE, REJECT, REQUEST_DOCUMENTS] = ACTIONS as [(typeof ACTIONS)[0], (typeof ACTIONS)[1], (typeof ACTIONS)[2]]
+const [APPROVE, REJECT, REQUEST_DOCUMENTS, CANCEL, VERIFY_DOCUMENT, REJECT_DOCUMENT] = ACTIONS as unknown as [
+  (typeof ACTIONS)[0], (typeof ACTIONS)[1], (typeof ACTIONS)[2], (typeof ACTIONS)[3], (typeof ACTIONS)[4], (typeof ACTIONS)[5],
+]
 const ID = '0b1d2c3e-4f50-4a61-8b72-93a4b5c6d7e8'
 
 interface Call {
@@ -126,6 +128,69 @@ describe('loadSummaries', () => {
     const { api } = scripted([new Error('offline')])
 
     expect(await kind(api.loadSummaries([7]))).toBe('unavailable')
+  })
+})
+
+const DOC = { id: 12, reference: 'APP2026001', name: 'Ama Fakename', document_type: 'Transcript', status: 'PENDING', application_status: 'UNDER_REVIEW' }
+
+describe('loadSummaries for documents', () => {
+  it('asks the document summaries endpoint and reads the document row', async () => {
+    const { api, calls } = scripted([json({ documents: [DOC] })])
+
+    expect(await api.loadSummaries([12, 13], 'document')).toEqual([
+      { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING' },
+    ])
+    expect(calls[0]?.url).toBe('/api/v1/admissions/staff/document-summaries/?ids=12,13')
+  })
+
+  it.each([
+    ['a body with an applications list instead', json({ applications: [DOC] })],
+    ['a record with a bad id', json({ documents: [{ ...DOC, id: 0 }] })],
+    ['a record with no document type', json({ documents: [{ ...DOC, document_type: null }] })],
+    ['a record that is not an object', json({ documents: [3] })],
+  ])('treats %s as unavailable', async (_label, reply) => {
+    const { api } = scripted([reply])
+
+    expect(await kind(api.loadSummaries([12], 'document'))).toBe('unavailable')
+  })
+})
+
+describe('write for the new actions', () => {
+  it.each([
+    [CANCEL, '/api/v1/admissions/applications/7/cancel/'],
+    [VERIFY_DOCUMENT, '/api/v1/admissions/application-documents/7/verify/'],
+  ])('posts an empty body for %o', async (spec, url) => {
+    const { api, calls } = scripted([json({})])
+
+    expect(await api.write(spec, 7, 'tok', 'ignored')).toEqual({ ok: true })
+
+    expect(calls[0]?.url).toBe(url)
+    expect(calls[0]?.init.body).toBe('{}')
+    expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe('Bearer tok')
+  })
+
+  it('posts the reason to reject_document', async () => {
+    const { api, calls } = scripted([json({})])
+
+    await api.write(REJECT_DOCUMENT, 12, 'tok', 'Unreadable scan')
+
+    expect(calls[0]?.url).toBe('/api/v1/admissions/application-documents/12/reject_document/')
+    expect(JSON.parse(calls[0]?.init.body as string)).toEqual({ reason: 'Unreadable scan' })
+  })
+
+  it('mints for the document action id with the reason, and without one for verify', async () => {
+    const reject = scripted([json({ csrfToken: 'c' }), json({ token: 't' })])
+    const verify = scripted([json({ csrfToken: 'c' }), json({ token: 't' })])
+
+    await reject.api.mintWriteToken(REJECT_DOCUMENT, [12], 'Unreadable scan')
+    await verify.api.mintWriteToken(VERIFY_DOCUMENT, [12], 'ignored')
+
+    expect(JSON.parse(reject.calls[1]?.init.body as string)).toEqual({
+      kind: 'write', action: 'application_document.reject', ids: [12], reason: 'Unreadable scan',
+    })
+    expect(JSON.parse(verify.calls[1]?.init.body as string)).toEqual({
+      kind: 'write', action: 'application_document.verify', ids: [12],
+    })
   })
 })
 

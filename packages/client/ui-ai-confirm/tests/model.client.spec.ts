@@ -1,6 +1,6 @@
 /** Prepared-batch parsing and the static tables the card reads. */
 import { describe, expect, it } from 'vitest'
-import { ACTIONS, isId, isRecord, parsePrepared, statusAfter, statusKey, wireName } from '../src/client/model.ts'
+import { ACTIONS, isId, isRecord, parsePrepared, statusAfter, shownName, statusKey, wireName } from '../src/client/model.ts'
 
 const ID = '0b1d2c3e-4f50-4a61-8b72-93a4b5c6d7e8'
 
@@ -72,19 +72,25 @@ describe('guards', () => {
 })
 
 describe('tables', () => {
-  it('names the three prepare tools with the MCP wire prefix', () => {
+  it('names the six prepare tools with the MCP wire prefix', () => {
     expect(ACTIONS.map(spec => wireName('cinhed', spec))).toEqual([
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
       'mcp__cinhed__prepare_request_documents',
+      'mcp__cinhed__prepare_cancel',
+      'mcp__cinhed__prepare_verify_document',
+      'mcp__cinhed__prepare_reject_document',
     ])
   })
 
   it('matches each action to the Django write it stands for', () => {
-    expect(ACTIONS.map(spec => [spec.action, spec.endpoint, spec.reason])).toEqual([
-      ['application.approve', 'approve', 'none'],
-      ['application.reject', 'reject', 'optional'],
-      ['application.request_documents', 'request_documents', 'required'],
+    expect(ACTIONS.map(spec => [spec.action, spec.resource, spec.endpoint, spec.reason])).toEqual([
+      ['application.approve', 'application', 'approve', 'none'],
+      ['application.reject', 'application', 'reject', 'optional'],
+      ['application.request_documents', 'application', 'request_documents', 'required'],
+      ['application.cancel', 'application', 'cancel', 'none'],
+      ['application_document.verify', 'document', 'verify', 'none'],
+      ['application_document.reject', 'document', 'reject_document', 'required'],
     ])
   })
 
@@ -95,10 +101,20 @@ describe('tables', () => {
     expect(statusKey('toString')).toBeUndefined()
   })
 
+  it('hides names that are empty or look like an email address', () => {
+    expect(shownName('Ama Fakename')).toBe('Ama Fakename')
+    expect(shownName('')).toBeUndefined()
+    expect(shownName('  ')).toBeUndefined()
+    expect(shownName('ama@example.com')).toBeUndefined()
+  })
+
   it('knows the status each action leaves behind', () => {
     expect(statusAfter('application.approve')).toBe('APPROVED')
     expect(statusAfter('application.reject')).toBe('REJECTED')
     expect(statusAfter('application.request_documents')).toBe('DOCUMENTS_REQUIRED')
+    expect(statusAfter('application.cancel')).toBe('CANCELLED')
+    expect(statusAfter('application_document.verify')).toBe('VERIFIED')
+    expect(statusAfter('application_document.reject')).toBe('REJECTED')
     expect(statusAfter('application.delete')).toBeUndefined()
   })
 })
