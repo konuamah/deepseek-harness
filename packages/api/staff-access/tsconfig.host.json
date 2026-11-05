@@ -6,6 +6,7 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/ai-token.ts",
     "src/create-admission.ts",
     "src/django-authenticator.ts",
     "src/external-admission.ts",
@@ -20,6 +21,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../core/session" },
+    { "path": "../../mcp/mcp-client" },
     { "path": "../../util/home-paths" },
     { "path": "../../workspace/workspace" },
     { "path": "../remote-access/tsconfig.host.json" },

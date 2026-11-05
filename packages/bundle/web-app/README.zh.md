@@ -48,7 +48,7 @@ dsh --profile web --no-open --port 8080
 
 `minimal` agent preset 使用持久 Shell、`read_image` 工具和固定 persona，支持自动历史压缩以及会话空闲时的 `/compact` 命令。它复用 Host token meter，并拥有隔离的压缩后端。[压缩配置与保留策略](../../compaction/compaction-basic/README.zh.md#use-this-package) 沿用现有后端。图片读取复用 Host 文件系统和附件存储，要求模型支持图片输入；不加载文本读取、写入和编辑工具。
 
-`staff` agent preset 只组合固定 persona 与压缩组，不声明任何工具、终端、文件系统、MCP、定时、subagent 或网页插件，因此员工 Session 只进行普通对话。员工 Session 运行此 preset；参见 [员工访问](../../api/staff-access/README.zh.md)。`staff-access` 行默认关闭；通过 `--patch` 传入的 profile overlay 可启用它并提供 `djangoBaseUrl` 与 `ownersFile`。
+`staff` agent preset 组合固定 persona、压缩组和一个 MCP 客户端行 `mcp-cinhed`（连接员工工具服务），不声明其他工具、终端、文件系统、定时、subagent 或网页插件。该行使用 `serverName: cinhed`，与[员工访问](../../api/staff-access/README.zh.md)的 `toolServerName` 默认值相同，并使用 `url: http://127.0.0.1:8004/mcp`。该 URL 必须与已部署的工具服务一致；若部署将其放在别处，请用 `--patch` overlay 修改。其静态 `Authorization: Bearer placeholder` 头只用于通过工具服务在客户端连接和列出工具时的语法检查；每次真实调用都携带调用用户自己的令牌，由员工访问按调用提供。员工 Session 只能调用该工具服务的工具。员工 Session 运行此 preset；参见 [员工访问](../../api/staff-access/README.zh.md)。`staff-access` 行默认关闭；通过 `--patch` 传入的 profile overlay 可启用它并提供 `djangoBaseUrl` 与 `ownersFile`。
 
 `--host` 与 `--port` 配置监听器；`--tls-cert` 与 `--tls-key` 让它直接提供 HTTPS；`--public-url` 指定 GUI 在剥离前缀的代理之后对外公告的公开 HTTP(S) 根，`--trusted-host` 则添加更多被接受的 authority。这些都在[监听、信任与公开部署](#public-deployments)中说明，而这些 flag 设置的 `tls` 字段记录在[载体的配置](../../../docs/subsystems/web-server.zh.md#config)中：
 

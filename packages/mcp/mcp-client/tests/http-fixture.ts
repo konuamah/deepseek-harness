@@ -1,6 +1,7 @@
 import { z } from 'zod'
 /** Keyless stateless Streamable HTTP MCP fixture for integration tests. */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createMcpHandler, McpServer, type CallToolResult } from '@modelcontextprotocol/server'
 import { toNodeHandler, type NodeIncomingMessageLike } from '@modelcontextprotocol/node'
@@ -12,6 +13,9 @@ export interface HttpMcpFixture {
   authorization: Array<string | undefined>
   close: () => Promise<void>
 }
+
+/** Authorization of the request being handled, for the `whoami` tool. */
+const currentAuthorization = new AsyncLocalStorage<string | undefined>()
 
 /** Start a local stateless MCP endpoint exposing one `ping` tool. */
 export async function startHttpMcpFixture(): Promise<HttpMcpFixture> {
@@ -26,13 +30,18 @@ export async function startHttpMcpFixture(): Promise<HttpMcpFixture> {
       calls.push('ping')
       return { content: [{ type: 'text', text: 'pong' }] }
     })
+    mcp.registerTool('whoami', { description: 'Echoes the request Authorization.', inputSchema: z.object({ delayMs: z.number().optional() }) }, async ({ delayMs }): Promise<CallToolResult> => {
+      const seen = currentAuthorization.getStore() ?? 'none'
+      if (delayMs !== undefined) await new Promise(resolve => setTimeout(resolve, delayMs))
+      return { content: [{ type: 'text', text: seen }] }
+    })
     return mcp
   })
   const handle = toNodeHandler(handler)
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     authorization.push(request.headers.authorization)
     // The adapter excludes explicit undefined on Node's optional HTTP fields.
-    await handle(request as NodeIncomingMessageLike, response)
+    await currentAuthorization.run(request.headers.authorization, () => handle(request as NodeIncomingMessageLike, response))
   }
   const server = createServer((request, response) => {
     handleRequest(request, response).catch((error: unknown) => {

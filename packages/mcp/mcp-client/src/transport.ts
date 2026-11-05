@@ -10,6 +10,7 @@ import type { Transport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { fetchWithCallHeaders } from './headers.ts'
 import type { Config } from './index.ts'
 
 /**
@@ -40,7 +41,7 @@ export function createTransport(config: Config): Transport {
     case 'streamable-http':
       return new StreamableHTTPClientTransport(
         new URL(config.url),
-        { requestInit: { headers: config.headers } },
+        { requestInit: { headers: config.headers }, fetch: fetchWithCallHeaders },
       )
   }
 }

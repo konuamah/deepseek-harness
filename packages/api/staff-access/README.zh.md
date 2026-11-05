@@ -39,7 +39,7 @@ Django 契约为 `GET {baseUrl}/api/v1/users/me/`。仅转发指定的会话 Coo
 
 Cookie 值从不记录日志。缓存键是 Cookie 值的 SHA-256 十六进制摘要。
 
-使用 `ownersFile`（所有者 JSON 文件的路径）和 `djangoBaseUrl`（Django 源，例如 `https://django.example`）挂载员工访问插件。未提供非空的 `ownersFile` 时，插件拒绝挂载；`djangoBaseUrl` 不是 http 或 https 源（不得含路径、查询或凭据）时同样拒绝。可选设置：`cookieName`（默认 `sessionid`）、`roles`（默认 `ADMISSIONS_MANAGER` 与 `ADMISSIONS_OFFICER`）、`ttlMs`（默认 60 000）、`sweepIntervalMs`（默认 30 000）和 `logDenied`（默认 `false`）和 `workspaceDir`（默认为 Harness home 下的 `staff-workspace`）。设置无效时，挂载即抛出异常。它将所有者索引作为 `staffSessions.owners` 提供，在 Remote 访问服务上注册 `staff` 策略，并提供 `externalPeerAdmission`，为每位员工用户授予键为 `staff:<userId>` 的非所有者 Peer。Web bundle 将该插件列为 `staff-access` 行，并设为 `disabled: true`，因此在 profile overlay 启用前保持关闭：
+使用 `ownersFile`（所有者 JSON 文件的路径）和 `djangoBaseUrl`（Django 源，例如 `https://django.example`）挂载员工访问插件。未提供非空的 `ownersFile` 时，插件拒绝挂载；`djangoBaseUrl` 不是 http 或 https 源（不得含路径、查询或凭据）时同样拒绝。可选设置：`cookieName`（默认 `sessionid`）、`roles`（默认 `ADMISSIONS_MANAGER` 与 `ADMISSIONS_OFFICER`）、`ttlMs`（默认 60 000）、`sweepIntervalMs`（默认 30 000）和 `logDenied`（默认 `false`）、`workspaceDir`（默认为 Harness home 下的 `staff-workspace`）和 `toolServerName`（默认 `cinhed`）。设置无效时，挂载即抛出异常。它将所有者索引作为 `staffSessions.owners` 提供，在 Remote 访问服务上注册 `staff` 策略，并提供 `externalPeerAdmission`，为每位员工用户授予键为 `staff:<userId>` 的非所有者 Peer。Web bundle 将该插件列为 `staff-access` 行，并设为 `disabled: true`，因此在 profile overlay 启用前保持关闭：
 
 ```yaml
 - id: staff-access
@@ -54,6 +54,8 @@ Cookie 值从不记录日志。缓存键是 Cookie 值的 SHA-256 十六进制�
 设置 `logDenied: true` 后，员工用户的每个被员工策略拒绝的 Remote 调用或事件，都会写入 Host 进程的 stderr（即启动 `dsh web` 的终端），格式为 `<timestamp> staff-access: denied <method> for user <id>`；当拒绝涉及某个资源时，其后附加 ` on <kind>:<id>`（全局资源为 `on global`），每个进程内每个方法、用户与资源只输出一次。插件自己的 exporter 只输出该 logger 的行，其他输出不变。每行只含端点、数字用户 id，以及被拒资源的 kind 和 id；参数、Cookie 与结果从不输出，所有者也从不输出。已记录的组合最多保留 2000 个，超出时先忘记最旧的一个。
 
 插件同时通过 [session-controller](../session-controller/README.zh.md) 的 `api-session/create-request` 与 `api-session/created` 事件处理员工的 `session.create`。员工请求保留 `agentPreset`，它被替换为 `staff`；`workspaceId` 必须等于共享的员工 Workspace 或省略，省略时补为共享 id。`sessionId` 只有在调用者拥有该会话时才保留，以便客户端复用其自己的空白会话；`cwd` 及其他字段一律拒绝；共享 Workspace 注册完成前的创建也被拒绝。复用范围收窄为同一用户拥有的空白 Session。Session 创建后，调用者被记为所有者，并调用 `remoteAccess.invalidate` 刷新该用户的绑定。记录所有者失败时，创建失败，新建的 Session 被释放。
+
+插件还提供 mcp-client 包读取的 Cordis 服务 `mcpHeaders`。对于 `toolServerName`（默认 `cinhed`，只能使用字母、数字、`_` 和 `-`）所指定的 MCP 服务器，它返回 `{ Authorization: 'Bearer <token>' }`，其中令牌是为调用方 Session 的所有者签发的 Django AI 读取令牌（`createAiTokenProvider`）；对其他服务器返回 `{}`，且不签发令牌。提供者从所有者索引取得所有者，因此子 Session 使用其父 Session 的所有者，并且只使用该用户已保存的会话 Cookie 签发令牌：先 `GET /api/v1/users/csrf-token/`，再 `POST /api/v1/ai/token/`，请求体为 `{"kind":"read"}`，携带该 Cookie、CSRF 令牌，并将 `Origin` 与 `Referer` 设为 Django 源，拒绝重定向，超时 3 000 毫秒。令牌按用户 ID 缓存（最多 1000 名用户），在剩余有效期不少于 60 秒时复用，且每位用户同一时间只签发一次。Session 没有所有者、没有已保存的 Cookie，或 Django 返回的不是有效的 200 时，调用以 `staff-access: sign in again` 失败；该消息从不包含令牌、Cookie 或 CSRF 值，不缓存任何内容，下一次调用会重试。撤销会丢弃该用户缓存的令牌，并丢弃仍在进行的签发结果。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -106,3 +108,4 @@ Web 客户端的启动调用必须在集成步骤中对照此允许列表进行�
 - `agentPresets/list`、`permissionPresets/catalog` 与 `session/modelCatalog` 不经过滤即允许，因为处理函数不对其条目调用 `allows()`，而 staff-access 没有过滤其回复的挂钩。员工可以读取：每个 agent preset（包括工具 preset）的 id、默认标记、显示名称、描述与激活失败文本；权限目录的选项名称、描述、沙箱与审批模式名称以及默认 preset；模型目录的提供方 id 与名称、模型 id、名称、描述、推理强度与默认选择，以及每个提供方的列表失败消息。这些回复不含密钥、服务器路径或工具列表，但失败消息或激活失败文本可能包含并非为员工编写的提供方或配置文本。
 - Web 客户端的启动调用尚未对照允许列表检查；不在列表中的调用都会被拒绝。
 - `logDenied` 不输出 `allows()` 从列表中过滤掉的条目，因为没有调用被拒绝。
+- 已签发的 AI 令牌在撤销后最长仍有效 15 分钟，因为 Django 令牌是无状态的；撤销只会阻止签发新令牌并丢弃缓存的令牌。

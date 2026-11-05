@@ -9,6 +9,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import type { McpHeaders } from '@deepseek-ai/dsh-mcp-client'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { createAiTokenProvider } from './ai-token.ts'
 import { admitStaffCreates } from './create-admission.ts'
 import { createDjangoStaffAuthenticator } from './django-authenticator.ts'
 import { createStaffAdmission } from './external-admission.ts'
@@ -45,6 +48,8 @@ export interface Config {
    * `staff-workspace` under the Harness home.
    */
   readonly workspaceDir?: string
+  /** Name of the MCP tool server that receives the staff user's AI token. Defaults to `cinhed`. */
+  readonly toolServerName?: string
 }
 
 /** The service this plugin provides under `staffSessions`. */
@@ -60,6 +65,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+const DEFAULT_TOOL_SERVER_NAME = 'cinhed'
 const DEFAULT_COOKIE_NAME = 'sessionid'
 const DEFAULT_ROLES: readonly string[] = ['ADMISSIONS_MANAGER', 'ADMISSIONS_OFFICER']
 const DEFAULT_TTL_MS = 60_000
@@ -79,6 +85,7 @@ interface Settings {
   readonly ttlMs: number
   readonly sweepIntervalMs: number
   readonly logDenied: boolean
+  readonly toolServerName: string
 }
 
 /**
@@ -119,8 +126,24 @@ export function apply(ctx: Context, config: Config): void {
     admitStaffCreates(scope, { owners, workspaceId })
   })
   ctx.inject(['connection', 'agents', 'remoteAccess'], (scope) => {
-    const admission = createStaffAdmission({ authenticator, cookieName: settings.cookieName, owners, scope })
+    const tokens = createAiTokenProvider({
+      djangoBaseUrl: settings.baseUrl,
+      cookieFor: userId => admission.cookieFor(userId),
+      ownerOf: sessionId => owners.ownerOf(SessionId(sessionId)),
+    })
+    const admission = createStaffAdmission({
+      authenticator, cookieName: settings.cookieName, owners, scope, onRevoke: (userId) => { tokens.drop(userId) },
+    })
     scope.provide('externalPeerAdmission', admission)
+    const mcpHeaders: McpHeaders = {
+      async headersFor(serverName, exec) {
+        if (serverName !== settings.toolServerName) return {}
+        // A call with no Agent has no owner to mint for.
+        if (exec.agent === undefined) throw new Error('staff-access: sign in again')
+        return { Authorization: `Bearer ${await tokens.tokenFor(exec.agent.id)}` }
+      },
+    }
+    scope.provide('mcpHeaders', mcpHeaders)
     scope.effect(() => {
       const timer = setInterval(() => { void admission.sweep() }, settings.sweepIntervalMs)
       timer.unref()
@@ -181,7 +204,11 @@ function resolveSettings(config: Config): Settings {
   const sweepIntervalMs = config.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
   assertDelay(sweepIntervalMs, 'sweepIntervalMs')
   const logDenied = resolveLogDenied(config.logDenied)
-  return { baseUrl: originOf(config.djangoBaseUrl), cookieName, roles, ttlMs, sweepIntervalMs, logDenied }
+  const toolServerName = config.toolServerName ?? DEFAULT_TOOL_SERVER_NAME
+  if (typeof toolServerName !== 'string' || !/^[A-Za-z0-9_-]+$/.test(toolServerName)) {
+    throw new Error('staff-access: toolServerName must use only letters, digits, "_", or "-"')
+  }
+  return { baseUrl: originOf(config.djangoBaseUrl), cookieName, roles, ttlMs, sweepIntervalMs, logDenied, toolServerName }
 }
 
 /**

@@ -29,6 +29,8 @@ export interface StaffAdmissionOptions {
   readonly owners: SessionOwnerIndex
   /** Host services a revoke uses: Agents, the Connection, Remote access, and the logger. */
   readonly scope: Pick<Context, 'agents' | 'connection' | 'remoteAccess' | 'logger'>
+  /** Called with the user id on every revoke, before the cookie is dropped (the AI token cache hooks in here). */
+  readonly onRevoke?: (userId: number) => void
 }
 
 /** Admission provider plus the revocation and sweep it runs. */
@@ -46,6 +48,12 @@ export interface StaffAdmission extends ExternalPeerAdmission {
    * @returns resolves when every held user has been checked.
    */
   sweep(): Promise<void>
+  /**
+   * The session cookie value held for a user.
+   * @param userId - Django user id.
+   * @returns the value, or undefined when none is held.
+   */
+  cookieFor(userId: number): string | undefined
   /** Drop every held cookie; later admissions and sweeps do nothing. */
   dispose(): void
 }
@@ -61,7 +69,7 @@ interface Held {
  * @returns the provider with its revocation and sweep.
  */
 export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmission {
-  const { authenticator, cookieName, owners, scope } = options
+  const { authenticator, cookieName, owners, scope, onRevoke } = options
   const held = new Map<number, Held>()
   let disposed = false
   let sweeping: Promise<void> | undefined
@@ -77,6 +85,7 @@ export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmis
         failures.push(error)
       }
     }
+    attempt(() => { onRevoke?.(userId) })
     const entry = held.get(userId)
     for (const sessionId of owners.sessionsOf(userId)) {
       attempt(() => { scope.agents.get(sessionId)?.cancel({ kind: 'user' }, { keepInbox: true }) })
@@ -173,6 +182,7 @@ export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmis
   return {
     admit,
     revokeStaff,
+    cookieFor: userId => held.get(userId)?.cookie,
     sweep() {
       if (disposed) return Promise.resolve()
       sweeping ??= Promise.all([...held].map(([userId, entry]) => recheck(userId, entry)))

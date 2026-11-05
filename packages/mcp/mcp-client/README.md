@@ -117,6 +117,7 @@ This section explains the design decisions behind the bridge and points at the c
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `serverName` reservation, activation await |
 | [`src/connection.ts`](src/connection.ts) | Connection supervisor: client generations, reconnect policy, attempt budget, disposal |
 | [`src/server-context.ts`](src/server-context.ts) | Resource-provider registration and literal server instructions |
+| [`src/headers.ts`](src/headers.ts) | Optional `mcpHeaders` service type and the fetch wrapper that overlays per-call headers |
 | [`src/tools.ts`](src/tools.ts) | Tool bridge: discovery, naming, registration swap, execution, image projection |
 | [`src/transport.ts`](src/transport.ts) | Transport factory: stdio spawn with scrubbed env, Streamable HTTP |
 
@@ -131,6 +132,8 @@ The SDK receives tool-list changes through legacy notifications or a modern subs
 ### Tool execution internals
 
 A tool call uses the SDK with the raw name, complete tool definition, JSON arguments, abort signal, and configured timeout. The SDK owns protocol validation, advertised output-schema validation, and modern request headers. Canonical success is `{ content: JsonValue[], structuredContent? }`, preserving valid MCP JSON blocks for programmatic and PTC mode callers. An MCP `isError` result throws before image persistence. The bridge validates each image batch before saving it; a refusal projects every image as diagnostic text. For a server that does not advertise `resources`, resource and template lists return empty pages without calling the SDK, whose fallback writes a diagnostic to stdout, where the ACP profile carries JSON-RPC.
+
+If another plugin provides the optional `mcpHeaders` service (`headersFor(serverName, exec)`), the bridge asks it for HTTP headers before each tool call and sends them, over the configured static headers, only on that call's POST requests. One shared connection can therefore carry a different bearer token per calling Agent. Connect, tool discovery, the standalone stream (GET), and session close (DELETE) send only the static headers, even if started inside a call. If `headersFor` throws, that call fails with the provider's message and no request is sent; header values are never logged or placed in error text. Without the service nothing changes. The SDK's `callTool` options accept no per-request headers, so the headers travel through async context to a `fetch` wrapper passed to the HTTP transport.
 
 ### Environment scrubbing (stdio)
 
@@ -211,6 +214,7 @@ These limits describe what you cannot do with this plugin and when it needs oper
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Invalid protocol results or output schemas fail through the SDK** — the bridge does not accept legacy `toolResult` substitutes or bypass advertised schema validation.
 - **Task-required MCP tools are rejected at call time** — a tool that requires the task-based execution extension throws instead of bridging; the extension is not implemented.
+- **Per-call headers apply to Streamable HTTP only** — the optional `mcpHeaders` service has no effect on stdio servers, and a provider's headers reach only the POST requests of its own tool call, not connection setup, discovery, the standalone stream, or session close.
 
 <a id="dev-note"></a>
 ### Dev Note

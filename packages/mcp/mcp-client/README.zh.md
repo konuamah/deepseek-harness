@@ -117,6 +117,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`serverName` 预留、激活等待 |
 | [`src/connection.ts`](src/connection.ts) | 连接监督器：客户端世代、重连策略、尝试预算、dispose（资源释放） |
 | [`src/server-context.ts`](src/server-context.ts) | 资源提供方注册与字面服务器指令 |
+| [`src/headers.ts`](src/headers.ts) | 可选 `mcpHeaders` 服务类型，以及叠加每次调用 header 的 fetch 包装 |
 | [`src/tools.ts`](src/tools.ts) | 工具桥接：发现、命名、注册交换、执行、图片投影 |
 | [`src/transport.ts`](src/transport.ts) | 传输工厂：带清洗环境的 stdio spawn、Streamable HTTP |
 
@@ -131,6 +132,8 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器�
 ### 工具执行内部细节
 
 工具调用向 SDK 提供原始名称、完整工具定义、JSON 参数、取消信号及配置的超时。SDK 负责协议校验、已声明输出 schema 的校验和现代协议请求 header。成功结果规范值为 `{ content: JsonValue[], structuredContent? }`，为编程调用方及 PTC 模式保留有效的 MCP JSON 块。MCP `isError` 结果会在图片持久化前抛出。桥接器在保存前校验整批图片；拒绝时将每张图片投影为诊断文本。对未声明 `resources` 能力的服务器，资源列表与模板列表直接返回空页而不调用 SDK，因为 SDK 的兜底逻辑会把诊断写到 stdout，而 ACP 配置档在 stdout 上传输 JSON-RPC。
+
+如果其他插件提供了可选的 `mcpHeaders` 服务（`headersFor(serverName, exec)`），桥接器会在每次工具调用前向它索取 HTTP header，并仅在该次调用的 POST 请求中以高于配置的静态 header 的优先级发送。因此一个共享连接可以为不同的调用 Agent 携带不同的 bearer token。连接建立、工具发现、独立流（GET）和会话关闭（DELETE）只发送静态 header，即使它们在某次调用的上下文中启动。若 `headersFor` 抛出异常，该次调用以提供方的消息失败且不会发送任何请求；header 值绝不会写入日志或错误文本。未提供该服务时行为不变。SDK 的 `callTool` 选项不接受每请求 header，因此 header 通过异步上下文传给传入 HTTP 传输的 `fetch` 包装。
 
 ### 环境清洗（stdio）
 
@@ -211,6 +214,7 @@ SDK 通过旧版通知或现代协议订阅接收工具列表变化。监督器�
 - **图片是唯一的持久丰富结果桥接**——PNG、JPEG、WebP 与 GIF 在确切能力得到证明后进入 Native 上下文。音频与嵌入资源载荷仍只存在于执行局部并带明确诊断，资源链接只以文本保留名称与 URI。
 - **无效的协议结果或输出 schema 由 SDK 拒绝**——桥接器不接受旧式 `toolResult` 替代结果，也不绕过已声明的 schema 校验。
 - **要求基于任务的 MCP 工具在调用时被拒绝**——要求使用基于任务的执行（task-based execution）扩展的工具会抛出异常而非被桥接；该扩展未实现。
+- **每次调用的 header 仅适用于 Streamable HTTP**——可选的 `mcpHeaders` 服务对 stdio 服务器无效，且提供方的 header 只会到达其所属工具调用的 POST 请求，不包括连接建立、工具发现、独立流与会话关闭。
 
 <a id="dev-note"></a>
 ### 开发备注
