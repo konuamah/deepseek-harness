@@ -1,0 +1,51 @@
+- banner:
+  - navigation "Session hierarchy": {{workspace}}
+  - text: staff
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Look up application APP-2048 and prepare its cancellation. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- button "Hide details" [expanded]
+- region "1 application":
+  - heading "1 application" [level=3]
+  - region "1 application":
+    - table:
+      - rowgroup:
+        - row "Name Reference Status Program":
+          - columnheader "Name"
+          - columnheader "Reference"
+          - columnheader "Status"
+          - columnheader "Program"
+      - rowgroup:
+        - row "Ada Lovelace APP-2048 Draft MSc Computing":
+          - cell "Ada Lovelace"
+          - cell "APP-2048"
+          - cell "Draft"
+          - cell "MSc Computing"
+  - paragraph: No files are available.
+- button "Hide details" [expanded]
+- region "Cancel 1 application":
+  - heading "Cancel 1 application" [level=3]
+  - list "Applications in this batch":
+    - listitem: Ada Lovelace APP-2048 · MSc Draft → Cancelled
+  - note: This cannot be undone and the applicant is not told.
+  - button "Cancel"
+  - button "Confirm"
+- paragraph: I prepared cancellation for APP-2048. Review the card before confirming.
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps"

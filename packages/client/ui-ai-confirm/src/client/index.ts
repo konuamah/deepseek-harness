@@ -1,7 +1,7 @@
 /**
  * AI confirm card, browser half. The CInHEd tool service prepares approve, reject, request-documents, cancel,
  * verify-document and reject-document batches and changes nothing; this plugin registers a card for each of those six prepare
- * tools in ui-tool's keyed `tool.call.toolview` slot. The card shows the batch with names, lets the staff
+ * tools as directly visible Chat nodes. The card shows the batch with names, lets the staff
  * member edit the reason, and on Confirm mints a short-lived write token with the staff session, uses
  * the batch up and writes each record.
  *
@@ -16,12 +16,13 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createConfirmApi } from './api.ts'
 import { createConfirmStore } from './confirm-store.ts'
-import { ApplicationsCard } from './ApplicationsCard.tsx'
-import { ConfirmCard } from './ConfirmCard.tsx'
+import { CardNode } from './CardNode.tsx'
+import { createCardDefinition } from './card-definition.ts'
 import { en, NS, zh, type AiConfirmKey } from './locales.ts'
 import { ACTIONS, READ_TOOLS, readWireName, wireName } from './model.ts'
 
@@ -56,8 +57,8 @@ export const Config: z<Partial<Config>, Config> = z.object({
   signInUrl: pathPrefix.default('/login'),
 })
 
-/** Required services: the slot registry and the locale registry. */
-export const inject = ['slots', 'locale']
+/** Required services: slots, locale dictionaries, and conversation definitions. */
+export const inject = ['slots', 'locale', 'uiConversation']
 
 /**
  * Client plugin body: register the dictionary and one card per prepare tool and one per read tool.
@@ -73,28 +74,19 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
     toolsPath: config.toolsPath,
     apiPath: config.apiPath,
   })
-  for (const spec of ACTIONS) {
+  const toolNames = [
+    ...ACTIONS.map(spec => wireName(config.serverName, spec)),
+    ...READ_TOOLS.map(tool => readWireName(config.serverName, tool)),
+  ]
+  ctx.effect(() => ctx.uiConversation.events.register(createCardDefinition(toolNames)))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'ai-confirm-card', locale: NS, store,
+    inject: () => ({ api, serverName: config.serverName, signInUrl: config.signInUrl }),
+  }, CardNode))
+  for (const key of toolNames) {
     ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
-      {
-        name: 'tool.call.toolview',
-        key: wireName(config.serverName, spec),
-        locale: NS,
-        store,
-        inject: () => ({ api, spec, signInUrl: config.signInUrl }),
-      },
-      ConfirmCard,
-    ))
-  }
-  for (const tool of READ_TOOLS) {
-    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
-      {
-        name: 'tool.call.toolview',
-        key: readWireName(config.serverName, tool),
-        locale: NS,
-        store,
-        inject: () => ({ api }),
-      },
-      ApplicationsCard,
+      { name: 'tool.call.toolview', key },
+      () => null,
     ))
   }
 }

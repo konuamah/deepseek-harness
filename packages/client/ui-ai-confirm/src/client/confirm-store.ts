@@ -5,7 +5,7 @@
  * module exports only the factory.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { FailureKind, PendingView, RecordOutcome, Summary } from './api.ts'
+import type { ApplicationFile, FailureKind, PendingView, RecordOutcome, Summary } from './api.ts'
 
 /** Where a batch is in its flow. A failure kind is a stop the card explains. */
 export type CardPhase = 'loading' | 'ready' | 'confirming' | 'done' | 'cancelled' | FailureKind
@@ -33,10 +33,28 @@ export interface ListState {
   readonly names: Readonly<Record<number, string>>
 }
 
+/** Files loaded for one get_application call. */
+export interface FilesState {
+  readonly phase: 'loading' | 'ready' | FailureKind
+  readonly documents: readonly ApplicationFile[]
+}
+
+/** One staff card's stacking facts: where it sits in a turn and which applications it shows. */
+export interface TurnCard {
+  readonly seq: number
+  readonly callId: string
+  readonly applicationIds: readonly number[]
+  readonly loaded: boolean
+}
+
 /** All cards of one Session: batches keyed by pending action id, application lists keyed by call id. */
 export interface ConfirmState {
   cards: Record<string, CardState>
   lists: Record<string, ListState>
+  files: Record<string, FilesState>
+  collapsed: Record<string, boolean>
+  /** Staff cards per turn, ordered by event sequence, for hiding a card a later one supersedes. */
+  turns: Record<number, readonly TurnCard[]>
 }
 
 /** What the controller needs from the store: one method per state change. */
@@ -53,10 +71,16 @@ export interface CardSink {
   listBegin(key: string): void
   listLoaded(key: string, names: Readonly<Record<number, string>>): void
   listFailed(key: string): void
+  filesBegin(key: string): void
+  filesLoaded(key: string, documents: readonly ApplicationFile[]): void
+  filesFailed(key: string, kind: FailureKind): void
 }
 
 type ConfirmActions = {
   [Name in keyof CardSink]: (state: ConfirmState, ...args: Parameters<CardSink[Name]>) => void
+} & {
+  collapse(state: ConfirmState, key: string, collapsed: boolean): void
+  seeCard(state: ConfirmState, turn: number, card: TurnCard): void
 }
 
 /** A card that has not loaded anything yet. */
@@ -84,8 +108,15 @@ function update(state: ConfirmState, key: string, change: Partial<CardState>): v
  */
 export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmActions> {
   return defineStore({
-    init: (): ConfirmState => ({ cards: {}, lists: {} }),
+    init: (): ConfirmState => ({ cards: {}, lists: {}, files: {}, collapsed: {}, turns: {} }),
     actions: {
+      collapse: (state, key, collapsed) => { state.collapsed[key] = collapsed },
+      seeCard: (state, turn, card) => {
+        const list = state.turns[turn] ?? []
+        const index = list.findIndex(existing => existing.callId === card.callId)
+        const next = index === -1 ? [...list, card] : list.map((existing, i) => i === index ? card : existing)
+        state.turns = { ...state.turns, [turn]: next }
+      },
       begin: (state, key) => {
         // Reopening keeps what staff typed and any outcomes already recorded.
         update(state, key, { phase: 'loading', step: null })
@@ -129,6 +160,15 @@ export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmAct
       },
       listFailed: (state, key) => {
         state.lists[key] = { phase: 'failed', names: {} }
+      },
+      filesBegin: (state, key) => {
+        state.files[key] = { phase: 'loading', documents: [] }
+      },
+      filesLoaded: (state, key, documents) => {
+        state.files[key] = { phase: 'ready', documents }
+      },
+      filesFailed: (state, key, kind) => {
+        state.files[key] = { phase: kind, documents: [] }
       },
     },
   })

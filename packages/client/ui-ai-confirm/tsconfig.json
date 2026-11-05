@@ -31,6 +31,15 @@
     },
     {
       "path": "../ui-tool"
+    },
+    {
+      "path": "../ui-chat/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../../core/session"
     }
   ]
 }

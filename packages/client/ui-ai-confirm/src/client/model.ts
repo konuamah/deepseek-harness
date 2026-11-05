@@ -167,7 +167,7 @@ export function readWireName(serverName: string, tool: (typeof READ_TOOLS)[numbe
   return `mcp__${serverName}__${tool}`
 }
 
-/** One row of a read tool's result. Only these four fixed fields are read; the AI result holds no name. */
+/** Fixed fields used from each read result; the browser loads display names separately. */
 export interface ListedApplication {
   readonly id: number
   readonly reference: string
@@ -201,6 +201,39 @@ export function parseApplications(text: string): readonly ListedApplication[] | 
   if (items.length === 0 || items.length > BATCH_LIMIT) return null
   const rows = items.map(listedApplication)
   return rows.every((row): row is ListedApplication => row !== null) ? rows : null
+}
+
+/**
+ * Application ids a staff card shows: a read result's applications, or a prepare call's application
+ * ids. Document batches name their applications in the call (`documents[].applicationId`), not in
+ * the batch's document ids, so prepare ids come from the call arguments.
+ * @param toolName - the wire tool name.
+ * @param args - the prepare call's JSON arguments; unused for reads.
+ * @param text - the read result's text.
+ * @returns the application ids, deduplicated for document batches; empty when unavailable.
+ */
+export function shownApplicationIds(toolName: string, args: string | undefined, text: string): readonly number[] {
+  const name = toolName.split('__').at(-1)
+  if (name === 'list_applications' || name === 'get_application') {
+    return parseApplications(text)?.map(row => row.id) ?? []
+  }
+  if (args === undefined) return []
+  let value: unknown
+  try {
+    value = JSON.parse(args)
+  } catch {
+    return []
+  }
+  if (!isRecord(value)) return []
+  if (Array.isArray(value.ids)) return value.ids.filter(isId)
+  if (Array.isArray(value.documents)) {
+    const ids = new Set<number>()
+    for (const pair of value.documents) {
+      if (isRecord(pair) && isId(pair.applicationId)) ids.add(pair.applicationId)
+    }
+    return [...ids]
+  }
+  return []
 }
 
 /** Application statuses the card has a label for. */

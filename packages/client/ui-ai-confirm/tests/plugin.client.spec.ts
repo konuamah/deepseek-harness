@@ -7,12 +7,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, Config, inject } from '../src/client/index.ts'
-import { ApplicationsCard } from '../src/client/ApplicationsCard.tsx'
-import { ConfirmCard } from '../src/client/ConfirmCard.tsx'
+import { CardNode } from '../src/client/CardNode.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
 interface Presentation {
   readonly slots: SlotRegistry
+  readonly cardDefinitions: unknown[]
   readonly dictionaries: { namespace: string; dictionaries: unknown }[]
   disposed: boolean
 }
@@ -22,9 +22,18 @@ function providePresentation(ctx: Context): Presentation {
   const slots = new SlotRegistry(ctx)
   slots.register({
     name: 'root',
-    children: { 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+    children: {
+      'tool.call.toolview': { kind: 'keyed', scope: 'session' },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session' },
+    },
   } as never, () => null)
-  const presentation: Presentation = { slots, dictionaries: [], disposed: false }
+  const presentation: Presentation = { slots, cardDefinitions: [], dictionaries: [], disposed: false }
+  ctx.provide('uiConversation', {
+    events: { register(definition: unknown) {
+      presentation.cardDefinitions.push(definition)
+      return () => { presentation.cardDefinitions.splice(presentation.cardDefinitions.indexOf(definition), 1) }
+    } },
+  })
   ctx.provide('locale', {
     register(namespace: string, dictionaries: unknown) {
       presentation.dictionaries.push({ namespace, dictionaries })
@@ -48,7 +57,7 @@ async function boot(config?: Record<string, unknown>) {
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'locale', 'uiConversation'])
   })
 
   it('registers one keyed card per prepare tool, named by the MCP server', async () => {
@@ -66,9 +75,21 @@ describe('apply', () => {
       'mcp__cinhed__list_applications',
       'mcp__cinhed__get_application',
     ])
-    expect(entries.slice(0, 6).every(entry => entry.component === ConfirmCard)).toBe(true)
-    expect(entries.slice(6).every(entry => entry.component === ApplicationsCard)).toBe(true)
-    expect(entries.every(entry => entry.locale === 'aiConfirm')).toBe(true)
+    for (const entry of entries) {
+      expect(typeof entry.component).toBe('function')
+      expect(entry.locale).toBeUndefined()
+      expect(entry.store).toBeUndefined()
+      expect(entry.inject).toBeUndefined()
+      const component = entry.component as () => null
+      expect(component()).toBeNull()
+    }
+    const node = presentation.slots.entries('conversation.chat.node')
+    expect(node).toHaveLength(1)
+    expect(node[0]?.options.key).toBe('ai-confirm-card')
+    expect(node[0]?.component).toBe(CardNode)
+    expect(node[0]?.locale).toBe('aiConfirm')
+    expect(presentation.cardDefinitions).toHaveLength(1)
+    expect(presentation.cardDefinitions[0]).toMatchObject({ kind: 'ai-confirm-card', target: 'chat' })
   })
 
   it('follows the configured server name', async () => {
@@ -79,30 +100,16 @@ describe('apply', () => {
     expect(keys.slice(6)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
   })
 
-  it('shares one store across all the cards', async () => {
-    const { presentation } = await boot({ serverName: 'cinhed' })
-
-    const stores = presentation.slots.entries('tool.call.toolview').map(entry => entry.store)
-
-    expect(stores[0]).toBeDefined()
-    expect(new Set(stores).size).toBe(1)
-  })
-
-  it('injects the network faces, the action and the sign-in page into each card', async () => {
+  it('shares one store and the API faces on the Chat node', async () => {
     const { presentation } = await boot({ serverName: 'cinhed', signInUrl: '/staff/login' })
+    const entry = presentation.slots.entries('conversation.chat.node')[0]!
+    const make = entry.inject as never as () => { api: object; serverName: string; signInUrl: string }
+    const injected = make()
 
-    const injected = presentation.slots.entries('tool.call.toolview').map((entry) => {
-      const make = entry.inject as never as () => { api: object; spec: { tool: string }; signInUrl: string }
-      return make()
-    })
-
-    expect(injected.slice(0, 6).map(face => face.spec.tool)).toEqual([
-      'prepare_approve', 'prepare_reject', 'prepare_request_documents',
-      'prepare_cancel', 'prepare_verify_document', 'prepare_reject_document',
-    ])
-    expect(injected.slice(0, 6).every(face => face.signInUrl === '/staff/login')).toBe(true)
-    expect(typeof injected[6]?.api).toBe('object')
-    expect(injected.every(face => typeof (face.api as { claim: unknown }).claim === 'function')).toBe(true)
+    expect(entry.store).toBeDefined()
+    expect(injected).toMatchObject({ serverName: 'cinhed', signInUrl: '/staff/login' })
+    expect(typeof (injected.api as { claim: unknown }).claim).toBe('function')
+    expect(presentation.slots.entries('tool.call.toolview').every(toolEntry => toolEntry.store === undefined)).toBe(true)
   })
 
   it('registers the zh and en dictionaries', async () => {
@@ -114,10 +121,14 @@ describe('apply', () => {
   it('removes every registration when the plugin is disposed (hot-reload safety)', async () => {
     const { presentation, fiber } = await boot({ serverName: 'cinhed' })
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(8)
+    expect(presentation.slots.entries('conversation.chat.node')).toHaveLength(1)
+    expect(presentation.cardDefinitions).toHaveLength(1)
 
     await fiber.dispose()
 
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.chat.node')).toHaveLength(0)
+    expect(presentation.cardDefinitions).toHaveLength(0)
     expect(presentation.disposed).toBe(true)
   })
 
@@ -130,7 +141,7 @@ describe('apply', () => {
       return new Response(JSON.stringify({ id: 'x' }), { status: 410 })
     })
     onTestFinished(() => { vi.unstubAllGlobals() })
-    const make = presentation.slots.entries('tool.call.toolview')[0]?.inject as never as () => {
+    const make = presentation.slots.entries('conversation.chat.node')[0]?.inject as never as () => {
       api: { claim: (id: string) => Promise<void> }
     }
     await make().api.claim('abc').catch(() => undefined)

@@ -37,13 +37,16 @@ describe('when the batch cannot be used', () => {
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy()
   })
 
-  it('explains an expired or used batch and still shows each application’s current status', async () => {
+  it('says a batch is closed without claiming failure, and confirms when the requested status was reached', async () => {
     const { api } = fakeApi({ pending: 'expired', summaries: SUMMARIES.map(summary => ({ ...summary, status: 'APPROVED' })) })
 
     render(<ConfirmCard {...props({ store: newStore(), api })} />)
     await settle()
 
-    expect(screen.getByText(/This batch has expired or was already used/)).toBeTruthy()
+    const banner = screen.getByText(/This request is closed/)
+    expect(banner.textContent).toContain('It now shows the requested status.')
+    expect(banner.closest('[data-failure]')).toBeNull()
+    expect(banner.closest('[role]')?.getAttribute('role')).toBe('status')
     expect(screen.getAllByText('Approved')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
   })
@@ -55,6 +58,7 @@ describe('when the batch cannot be used', () => {
     await settle()
 
     expect(screen.getByText(/did not answer/)).toBeTruthy()
+    expect(screen.getByRole('alert')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
   })
 
@@ -65,6 +69,7 @@ describe('when the batch cannot be used', () => {
     await settle()
 
     expect(screen.getByText(/This account cannot confirm this action/)).toBeTruthy()
+    expect(screen.getByRole('alert')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
   })
 
@@ -78,6 +83,7 @@ describe('when the batch cannot be used', () => {
 
     expect(calls).not.toContain('claim')
     expect(screen.getByText(/You are not signed in/)).toBeTruthy()
+    expect(screen.getByRole('alert')).toBeTruthy()
   })
 
   it('shows the batch as used when it was taken between the load and the click', async () => {
@@ -89,7 +95,9 @@ describe('when the batch cannot be used', () => {
     await settle()
 
     expect(calls.some(call => call.startsWith('write:'))).toBe(false)
-    expect(screen.getByText(/This batch has expired or was already used/)).toBeTruthy()
+    const banner = screen.getByText(/This request is closed/)
+    expect(banner.textContent).not.toContain('It now shows the requested status.')
+    expect(banner.closest('[role]')?.getAttribute('role')).toBe('status')
   })
 })
 

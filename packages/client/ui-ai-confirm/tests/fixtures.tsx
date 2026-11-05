@@ -20,8 +20,8 @@ export const SUMMARIES: readonly ApplicationSummary[] = [
 ]
 
 export const DOC_SUMMARIES: readonly DocumentSummary[] = [
-  { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING' },
-  { id: 13, name: '', reference: 'APP2026002', documentType: 'Passport', status: 'PENDING' },
+  { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING', previewable: true },
+  { id: 13, name: '', reference: 'APP2026002', documentType: 'Passport', status: 'PENDING', previewable: false },
 ]
 
 interface Batch {
@@ -43,6 +43,7 @@ export const batchText = (over: Batch = {}): string =>
 export interface Script {
   pending?: Partial<PendingView> | FailureKind
   summaries?: readonly Summary[] | FailureKind
+  documents?: readonly import('../src/client/api.ts').ApplicationFile[] | FailureKind
   mint?: FailureKind
   claim?: FailureKind
   writes?: Record<number, RecordOutcome>
@@ -67,6 +68,13 @@ export function fakeApi(script: Script = {}) {
       const summaries = script.summaries ?? SUMMARIES
       return typeof summaries === 'string' ? fail(summaries) : summaries
     },
+    async loadDocuments() {
+      calls.push('loadDocuments')
+      const documents = script.documents ?? []
+      return typeof documents === 'string' ? fail(documents) : documents
+    },
+    documentUrl(kind, id, mode) { return `/api/v1/admissions/staff/documents/${kind}/${id}/${mode}/` },
+
     async claim() {
       calls.push('claim')
       if (script.claim !== undefined) fail(script.claim)
@@ -96,15 +104,13 @@ export function props(over: {
   spec?: ActionSpec
   text?: string
   isError?: boolean
-  phase?: 'preparing' | 'start' | 'result'
+  phase?: 'start' | 'result'
 }): ConfirmCardProps {
   const { store, api, spec = APPROVE, text = batchText(), isError = false, phase = 'result' } = over
-  const block = phase === 'result'
-    ? { kind: 'tool-result', callId: 'call-1', name: 'x', content: [{ type: 'text', text }, { type: 'image' }], isError, subCalls: [] }
-    : { phase, callId: 'call-1', name: 'x', subCalls: [] }
   return {
     phase,
-    block,
+    text,
+    isError,
     toolName: `mcp__cinhed__${spec.tool}`,
     callId: 'call-1',
     t,

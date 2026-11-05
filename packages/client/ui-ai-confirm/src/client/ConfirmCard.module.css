@@ -3,20 +3,25 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
-  padding: 12px;
+  padding: 16px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font-size: calc(13px + var(--dsh-content-font-delta, 0px));
   line-height: 1.45;
 }
 
 .title {
-  margin: 0;
-  font-size: inherit;
-  font-weight: 600;
+  margin: -16px -16px 0;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-lg) var(--dsw-radius-lg) 0 0;
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: calc(14px + var(--dsh-content-font-delta, 0px));
+  font-weight: 500;
 }
 
 .records,
@@ -33,8 +38,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: 6px 12px;
   min-width: 0;
+  padding: 8px 0;
+}
+
+.record + .record {
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .name {
@@ -45,11 +55,25 @@
 .meta,
 .detail,
 .skippedTitle {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.fileLinks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .status {
   color: var(--dsw-alias-label-secondary);
+}
+
+.record > .status {
+  padding: 2px 8px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: calc(12px + var(--dsh-content-font-delta, 0px));
 }
 
 .skipped {
@@ -117,7 +141,10 @@
 
 .warning {
   margin: 0;
-  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary));
+  padding: 10px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-label-primary);
   overflow-wrap: anywhere;
 }
 
@@ -130,16 +157,31 @@
 }
 
 .banner[data-failure] {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-top: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.bannerIcon {
+  flex: none;
   color: var(--dsw-alias-state-error-primary);
 }
 
 .link {
   color: inherit;
   text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fileLinks a {
+  color: var(--dsw-alias-label-primary);
+  text-underline-offset: 3px;
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-top: 12px;
 }

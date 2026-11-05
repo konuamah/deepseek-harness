@@ -20,7 +20,7 @@ const row = (id: number, status = 'UNDER_REVIEW') => ({
 const listText = (ids = [7, 8]) => JSON.stringify({ total: ids.length, page: 1, hasMore: false, applications: ids.map(id => row(id, id === 8 ? 'PENDING' : 'UNDER_REVIEW')) })
 
 /** The card's props: the same payload the prepare cards get, whose api face is all this card reads. */
-const view = (over: Parameters<typeof props>[0]): ApplicationsCardProps => props(over)
+const view = (over: Parameters<typeof props>[0], toolName = 'mcp__cinhed__list_applications'): ApplicationsCardProps => ({ ...props(over), toolName })
 
 function counting(api: ConfirmApi) {
   const asked: (readonly number[])[] = []
@@ -61,12 +61,90 @@ describe('applications card', () => {
   it('works for get_application, whose result is one application', async () => {
     const { api, asked } = counting(fakeApi().api)
 
-    render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) })} />)
+    render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')} />)
     await settle()
 
     expect(asked).toEqual([[7]])
     expect(screen.getByText('1 application')).toBeTruthy()
     expect(screen.getByText('Ama Mensah')).toBeTruthy()
+    expect(asked).toHaveLength(1)
+  })
+
+  it('loads and displays staff files only for get_application', async () => {
+    const documents = [
+      { id: 2, kind: 'uploaded' as const, title: '<img src=x onerror=alert(1)>', status: 'PENDING', availableToApplicant: true, previewable: true },
+      { id: 3, kind: 'official' as const, title: 'Offer letter', status: null, availableToApplicant: false, previewable: false },
+    ]
+    const base = fakeApi({ documents })
+    const api = { ...base.api, documentUrl: (kind: string, id: number, mode: string) => `/api/v1/admissions/staff/documents/${kind}/${id}/${mode}/` }
+    const { container } = render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')} />)
+    await settle()
+
+    expect(base.calls).toContain('loadDocuments')
+    expect(container.textContent).toContain('<img src=x onerror=alert(1)>')
+    expect(container.querySelectorAll('img')).toHaveLength(0)
+    expect(screen.getByText('Not released to applicant')).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: 'View' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: 'Download' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Download' })[1]?.getAttribute('href')).toContain('/official/3/download/')
+    expect(screen.getAllByRole('link', { name: 'View' })[0]?.getAttribute('target')).toBe('_blank')
+    expect(screen.getAllByRole('link', { name: 'View' })[0]?.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('shows files loading until the asynchronous request settles', async () => {
+    let release: () => void = () => {}
+    const { api } = fakeApi()
+    const slow: ConfirmApi = { ...api, loadDocuments: () => new Promise((resolve) => { release = () => { resolve([]) } }) }
+
+    render(<ApplicationsCard {...view({ store: newStore(), api: slow, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')} />)
+
+    expect(screen.getByText('Loading files')).toBeTruthy()
+    release()
+    await settle()
+
+    expect(screen.getByText('No files are available.')).toBeTruthy()
+  })
+
+  it('shows the generic file failure and retries only on click', async () => {
+    const { api, calls } = fakeApi({ documents: 'unavailable' })
+    render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')} />)
+    await settle()
+
+    expect(screen.getByText('Files could not be loaded. Try again.')).toBeTruthy()
+    expect(calls.filter(call => call === 'loadDocuments')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await settle()
+    expect(calls.filter(call => call === 'loadDocuments')).toHaveLength(2)
+  })
+
+  it('shows the empty file state and does not reload files when get_application remounts', async () => {
+    const { api, calls } = fakeApi({ documents: [] })
+    const store = newStore()
+    const appView = view({ store, api, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')
+    const first = render(<ApplicationsCard {...appView} />)
+    await settle()
+    expect(screen.getByText('No files are available.')).toBeTruthy()
+    first.unmount()
+    render(<ApplicationsCard {...appView} />)
+    await settle()
+    expect(calls.filter(call => call === 'loadDocuments')).toHaveLength(1)
+  })
+
+  it('does not load files for a one-row list_applications result', async () => {
+    const { api, calls } = fakeApi()
+    render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) })} />)
+    await settle()
+    expect(calls).toEqual(['loadSummaries'])
+  })
+
+  it('shows sign-in guidance and retries file loading on click', async () => {
+    const { api, calls } = fakeApi({ documents: 'sign-in' })
+    render(<ApplicationsCard {...view({ store: newStore(), api, text: JSON.stringify(row(7)) }, 'mcp__cinhed__get_application')} />)
+    await settle()
+    expect(screen.getByText('Sign in, then try loading the files again.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await settle()
+    expect(calls.filter(call => call === 'loadDocuments')).toHaveLength(2)
   })
 
   it('shows the rows without names while loading', () => {
@@ -128,7 +206,7 @@ describe('applications card', () => {
   it('renders nothing while the call runs or when it errored', async () => {
     const { api, calls } = fakeApi()
 
-    const running = render(<ApplicationsCard {...view({ store: newStore(), api, phase: 'preparing' })} />)
+    const running = render(<ApplicationsCard {...view({ store: newStore(), api, phase: 'start' })} />)
     const errored = render(<ApplicationsCard {...view({ store: newStore(), api, text: listText(), isError: true })} />)
     await settle()
 

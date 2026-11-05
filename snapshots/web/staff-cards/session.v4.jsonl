@@ -1,0 +1,14 @@
+{"type":"session","version":4,"id":"{{session:1}}","createdAt":0,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0,"agentPreset":"staff"}
+{"type":"turn/start","data":{"turn":1}}
+{"type":"step/start","data":{"turn":1,"step":1}}
+{"type":"system/message","data":{"turn":1,"step":1,"message":{"role":"system","content":[{"type":"text","text":"{{system}}"}],"source":{"kind":"system-prompt"},"id":"{{message:1}}"}},"surfaceOp":"append"}
+{"type":"user/message","data":{"content":[{"type":"text","text":"Look up application APP-2048 and prepare its cancellation."}],"source":{"kind":"user"},"role":"user","id":"{{message:2}}"},"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"staff-list-1","name":"mcp__cinhed__get_application","arguments":"{\"id\":2048}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"stream":[]},"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":1,"callId":"staff-list-1","name":"mcp__cinhed__get_application","arguments":"{\"id\":2048}"}}
+{"type":"tool/result","data":{"turn":1,"step":1,"message":{"role":"tool","source":{"kind":"tool","callId":"staff-list-1"},"toolCallId":"staff-list-1","content":[{"type":"text","text":"{\"id\":2048,\"reference\":\"APP-2048\",\"status\":\"DRAFT\",\"program\":{\"name\":\"MSc Computing\"}}"}],"isError":false,"id":"{{message:4}}"}},"sourceEventSeqs":[5],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"staff-cancel-1","name":"mcp__cinhed__prepare_cancel","arguments":"{\"ids\":[2048]}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:5}}"},"stream":[]},"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":1,"callId":"staff-cancel-1","name":"mcp__cinhed__prepare_cancel","arguments":"{\"ids\":[2048]}"}}
+{"type":"tool/result","data":{"turn":1,"step":1,"message":{"role":"tool","source":{"kind":"tool","callId":"staff-cancel-1"},"toolCallId":"staff-cancel-1","content":[{"type":"text","text":"{\"pendingActionId\":\"123e4567-e89b-42d3-a456-426614174000\",\"action\":\"application.cancel\",\"eligible\":[{\"id\":2048,\"status\":\"DRAFT\"}],\"skipped\":[],\"expiresAt\":\"2099-01-01T00:00:00Z\"}"}],"isError":false,"id":"{{message:6}}"}},"sourceEventSeqs":[8],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"text","text":"I prepared cancellation for APP-2048. Review the card before confirming."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:7}}"},"stream":[]},"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":1}}
+{"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

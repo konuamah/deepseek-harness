@@ -131,14 +131,14 @@ describe('loadSummaries', () => {
   })
 })
 
-const DOC = { id: 12, reference: 'APP2026001', name: 'Ama Fakename', document_type: 'Transcript', status: 'PENDING', application_status: 'UNDER_REVIEW' }
+const DOC = { id: 12, reference: 'APP2026001', name: 'Ama Fakename', document_type: 'Transcript', status: 'PENDING', application_status: 'UNDER_REVIEW', previewable: true }
 
 describe('loadSummaries for documents', () => {
-  it('asks the document summaries endpoint and reads the document row', async () => {
+  it('asks the document summaries endpoint and reads the document row including previewable', async () => {
     const { api, calls } = scripted([json({ documents: [DOC] })])
 
     expect(await api.loadSummaries([12, 13], 'document')).toEqual([
-      { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING' },
+      { id: 12, name: 'Ama Fakename', reference: 'APP2026001', documentType: 'Transcript', status: 'PENDING', previewable: true },
     ])
     expect(calls[0]?.url).toBe('/api/v1/admissions/staff/document-summaries/?ids=12,13')
   })
@@ -152,6 +152,43 @@ describe('loadSummaries for documents', () => {
     const { api } = scripted([reply])
 
     expect(await kind(api.loadSummaries([12], 'document'))).toBe('unavailable')
+  })
+})
+
+describe('staff files', () => {
+  const FILES = { documents: [
+    { id: 1, kind: 'uploaded', title: '<script>title</script>', status: 'PENDING', available_to_applicant: true, previewable: true },
+    { id: 2, kind: 'official', title: 'Letter', status: null, available_to_applicant: false, previewable: false },
+  ] }
+
+  it('loads scoped files and builds same-origin links from validated ids and kinds', async () => {
+    const { api, calls } = scripted([json(FILES)])
+    expect(await api.loadDocuments(44)).toEqual([
+      { id: 1, kind: 'uploaded', title: '<script>title</script>', status: 'PENDING', availableToApplicant: true, previewable: true },
+      { id: 2, kind: 'official', title: 'Letter', status: null, availableToApplicant: false, previewable: false },
+    ])
+    expect(calls[0]?.url).toBe('/api/v1/admissions/staff/applications/44/documents/')
+    expect(api.documentUrl('uploaded', 1, 'view')).toBe('/api/v1/admissions/staff/documents/uploaded/1/view/')
+    expect(api.documentUrl('official', 2, 'download')).toBe('/api/v1/admissions/staff/documents/official/2/download/')
+    expect(() => api.documentUrl('uploaded', 0, 'view')).toThrow()
+  })
+
+  it.each([[401, 'sign-in'], [403, 'sign-in'], [404, 'unavailable'], [500, 'unavailable']])(
+    'classifies file response %i as %s', async (status, expected) => {
+      const { api } = scripted([json({}, status)])
+      expect(await kind(api.loadDocuments(4))).toBe(expected)
+    },
+  )
+
+  it.each([
+    { documents: [{ ...FILES.documents[0], id: 0 }] },
+    { documents: [{ ...FILES.documents[0], kind: 'elsewhere' }] },
+    { documents: [{ ...FILES.documents[0], status: 7 }] },
+    { documents: [{ ...FILES.documents[0], available_to_applicant: 'yes' }] },
+    { documents: [{ ...FILES.documents[0], previewable: 1 }] },
+  ])('rejects malformed file metadata', async (body) => {
+    const { api } = scripted([json(body)])
+    expect(await kind(api.loadDocuments(4))).toBe('unavailable')
   })
 })
 

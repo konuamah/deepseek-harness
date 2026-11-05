@@ -1,0 +1,15 @@
+- id: ui-ai-confirm
+  disabled: false
+- insert:
+    - id: preset-staff
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: staff
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: Staff admissions assistant.
+              complete: true
+              includeRuntimeContext: false

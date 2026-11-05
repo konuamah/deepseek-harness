@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, and `prepare_reject_document` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. The model sees only the tool result and never a name, a token, or a write outcome.
+`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, and `prepare_reject_document` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible.
 
 ## Table of Contents
 
@@ -45,15 +45,15 @@ All three paths are checked at load: each must be an absolute path on the page's
 
 ### What staff see
 
-A prepared batch shows its records with name, reference, program, and the change each will get (for example, "Under review → Approved"). Records the tool service skipped are listed with its reason. Reject, request-documents, and reject-document show a reason field that starts from the AI's draft. A request for documents or a document rejection cannot be confirmed with an empty reason.
+Application and confirm cards appear inline in the conversation with shaded headers and separated record, file, and action sections. On narrow screens, the application table scrolls horizontally without moving the file links. Cards open by default and can be collapsed for the current session. Collapsing hides the card details without removing any rows; the choice is not persisted across sessions. In one turn, an earlier lookup card hides once a later loaded card shows every application it shows, so a one-application flow ends on a single card. A prepared batch shows its records with name, reference, program, and the change each will get (for example, "Under review → Approved"). Records the tool service skipped are listed with its reason. Reject, request-documents, and reject-document show a reason field that starts from the AI's draft. A request for documents or a document rejection cannot be confirmed with an empty reason.
 
-The three document and cancel actions add a warning line: cancelling an application cannot be undone and the applicant is not told; verifying or rejecting a document emails the applicant, and a rejection sends the reason as written and may move the application to documents required. Document batches list their ids as document ids, and each row shows name, reference, document type, and the status change (for example, "Pending review → Verified"), loaded from the staff-only document-summaries call. A name that is empty or looks like an email address shows as a dash.
+The three document and cancel actions add a warning line: cancelling an application cannot be undone and the applicant is not told; verifying or rejecting a document emails the applicant, and a rejection sends the reason as written and may move the application to documents required. Document batches list their ids as document ids, and each row shows name, reference, document type, and the status change (for example, "Pending review → Verified"), loaded from the staff-only document-summaries call. Uploaded and official files have Download links; previewable files also have a View link. A name that is empty or looks like an email address shows as a dash.
 
-Confirm runs in this order: check the sign-in and mint the write token, use the batch up, then write one record at a time. Each record gets its own outcome (changed, or the reason Django refused). Cancel uses the batch up without writing. A batch that expired, was used, or cannot be loaded explains itself and shows each application's current status.
+Confirm runs in this order: check the sign-in and mint the write token, use the batch up, then write one record at a time. Each record gets its own outcome (changed, or the reason Django refused). Cancel uses the batch up without writing. A closed batch (expired, used, or unable to load) shows a calm message and each application's current status; it names the requested status only when every record now has it. A real failure (signed out, refused, or the system did not answer) shows a small warning marker and is announced to assistive technology as an alert; a closed or cancelled request stays calm and unannounced.
 
 ### Applications cards
 
-The results of `list_applications` and `get_application` show as a compact table with Name, Reference, Status, and Program. The tool service never returns a name, so the browser fills the names in from the staff-only application-summaries call under `apiPath`, with the staff member's own session. The card reads only each record's id and name from that reply, asks once per call (for at most 25 ids), and keeps the names in the card's in-memory store only. A name that looks like an email address is not shown.
+The results of `list_applications` and `get_application` show as a compact table with Name, Reference, Status, and Program. The AI tool result may include first and last names, and the browser independently loads names from the staff-only application-summaries call under `apiPath`, using the staff member's own session. Only a single-result `get_application` card also lists uploaded and official files from the staff-only application documents call; it labels uploaded status and unreleased official files. View opens a native preview in a new tab when supported, and Download is a separate link. File metadata remains in the browser-only store. The card reads only each record's id and name from the summaries reply, asks once per call (for at most 25 ids), and keeps names in the card's in-memory store only. A name that looks like an email address is not shown.
 
 The card fails soft. While names load, the rows show without them. If names cannot be loaded (signed out, expired, unavailable), the table keeps its reference, status, and program and adds one line saying so, with a Try again button. A result that is not a well-formed list of applications, or an error, renders nothing.
 
@@ -71,7 +71,7 @@ The card calls the tool service and Django on the page's own origin, so the staf
 
 ### Registration
 
-`apply` registers one dictionary pair (`zh`, `en`) and one `tool.call.toolview` entry per prepare tool (each action's `resource`, application or document, picks the write path and the summaries call) and per read tool, all sharing one declared Session store. Each entry's `inject` face carries the network faces, the action it stands for, and the sign-in path. The package exports only `apply`, `inject`, and `Config`.
+`apply` registers one dictionary pair (`zh`, `en`), a `conversation.chat.node` renderer for application and confirm cards, and empty `tool.call.toolview` entries for each prepare and read tool to prevent duplicate cards. The node renderer receives the API, server name, and sign-in path; the card definition matches calls using the exact wire names derived from the configured server name. Cards render inline with the turn and are collapsible for the current session only. The node renderer and cards share one declared Session store. The package exports only `apply`, `inject`, and `Config`.
 
 ### Flow
 
@@ -104,7 +104,7 @@ The card derives only from the logged call and result. A result that is not a we
 
 #### What the model sees
 
-Nothing from this package. The results of the six prepare tools, written by the tool service, reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`. They hold no names and no free text from applicants. The confirm, the write token, the names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
+The six prepare tool results reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`; these results contain no names or applicant free text. Read-tool results may include applicants' first and last names. The confirm, the write token, browser-loaded names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
 
 #### Token effect
 
@@ -124,7 +124,7 @@ None. The package never edits earlier request tokens.
 - **Sign-in is a link** — the card does not host a login form. It opens `signInUrl` in a new tab, and staff return to the card and choose Try again.
 - **Same origin only** — the card relies on the staff session cookie and a reverse proxy; there is no cross-origin mode.
 - **The tool service keeps batches in memory for 15 minutes** — a tool service restart makes the card report an expired batch, and the model must prepare it again.
-- **Not covered by the browser smoke or replayed end-to-end suites** — the package has unit, component, and plugin-registration specs at 100% coverage, but no `test:web` scenario.
+- **Browser replay does not exercise writes** — the keyless `staff-cards` scenario covers inline read and preparation cards through the real Web composition with mocked staff APIs; it does not confirm a backend write.
 
 <a id="dev-note"></a>
 ### Dev Note

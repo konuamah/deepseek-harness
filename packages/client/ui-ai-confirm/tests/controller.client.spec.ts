@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ConfirmApiError, type ApplicationSummary, type ConfirmApi, type FailureKind, type PendingView, type RecordOutcome,
 } from '../src/client/api.ts'
-import { cancelCard, confirmCard, openCard } from '../src/client/controller.ts'
+import { cancelCard, confirmCard, openCard, openDocuments } from '../src/client/controller.ts'
 import { createConfirmStore, EMPTY_CARD } from '../src/client/confirm-store.ts'
 import { ACTIONS, type PreparedBatch } from '../src/client/model.ts'
 
@@ -38,6 +38,8 @@ function fakeApi(script: Script): { api: ConfirmApi; calls: string[] } {
   const calls: string[] = []
   const fail = (kind: FailureKind): never => { throw new ConfirmApiError(kind) }
   const api: ConfirmApi = {
+    async loadDocuments() { calls.push('loadDocuments'); return [] },
+    documentUrl: (kind, id, mode) => `/documents/${kind}/${id}/${mode}`,
     async loadPending() {
       calls.push('loadPending')
       const { pending = PENDING } = script
@@ -72,6 +74,15 @@ function newStore() {
 }
 
 describe('openCard', () => {
+  it('loads application documents and preserves sign-in failure kind', async () => {
+    const store = newStore()
+    const { api } = fakeApi({})
+    const documents: import('../src/client/api.ts').ApplicationFile[] = []
+    const docApi: ConfirmApi = { ...api, loadDocuments: async () => { throw new ConfirmApiError('sign-in') } }
+    await openDocuments(docApi, store.actions, 'call-1', 7)
+    expect(store.getSnapshot().files['call-1']).toEqual({ phase: 'sign-in', documents })
+  })
+
   it('loads the batch and the names, and takes the AI draft as the reason', async () => {
     const store = newStore()
     const { api } = fakeApi({})
@@ -291,7 +302,7 @@ describe('createConfirmStore', () => {
   it('starts empty and keeps one entry per batch', () => {
     const store = newStore()
 
-    expect(store.getSnapshot()).toEqual({ cards: {}, lists: {} })
+    expect(store.getSnapshot()).toEqual({ cards: {}, lists: {}, files: {}, collapsed: {}, turns: {} })
     store.actions.begin('a')
     store.actions.begin('b')
     store.actions.editReason('a', 'x')
@@ -307,6 +318,6 @@ describe('createConfirmStore', () => {
 
     first.actions.begin('a')
 
-    expect(second.getSnapshot()).toEqual({ cards: {}, lists: {} })
+    expect(second.getSnapshot()).toEqual({ cards: {}, lists: {}, files: {}, collapsed: {}, turns: {} })
   })
 })

@@ -14,7 +14,7 @@ afterEach(cleanup)
 const REASON = 'Reason (may be sent to the applicant)'
 
 describe('while the tool call runs or fails', () => {
-  it.each(['preparing', 'start'] as const)('shows a quiet row in the %s phase', (phase) => {
+  it.each(['start'] as const)('shows a quiet row in the %s phase', (phase) => {
     const { api } = fakeApi()
 
     render(<ConfirmCard {...props({ store: newStore(), api, phase })} />)
@@ -303,6 +303,7 @@ describe('cancelling', () => {
 
     expect(calls).toEqual(['loadPending', 'loadSummaries', 'claim'])
     expect(screen.getByText('Cancelled. Nothing was changed.')).toBeTruthy()
+    expect(screen.getByRole('status')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
   })
 })
@@ -334,6 +335,11 @@ describe('the cancel and document cards', () => {
     const records = within(screen.getByRole('list', { name: 'Applications in this batch' }))
     expect(records.getByText('Ama Fakename')).toBeTruthy()
     expect(records.getByText('APP2026001 · Transcript')).toBeTruthy()
+    expect(records.getAllByRole('link', { name: 'View' })).toHaveLength(1)
+    expect(records.getByRole('link', { name: 'View' }).getAttribute('href')).toContain('/uploaded/12/view/')
+    expect(records.getAllByRole('link', { name: 'Download' })).toHaveLength(2)
+    expect(records.getAllByRole('link', { name: 'Download' })[0]?.getAttribute('href')).toContain('/uploaded/12/download/')
+    expect(records.getAllByRole('link', { name: 'Download' })[1]?.getAttribute('href')).toContain('/uploaded/13/download/')
     expect(records.getAllByText('Pending review → Verified')).toHaveLength(2)
     expect(screen.getByText('The applicant is emailed.')).toBeTruthy()
     expect(screen.queryByLabelText(REASON)).toBeNull()

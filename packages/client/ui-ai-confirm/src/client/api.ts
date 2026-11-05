@@ -42,10 +42,23 @@ export interface DocumentSummary {
   readonly reference: string
   readonly documentType: string
   readonly status: string
+  readonly previewable: boolean
+}
+
+/** A file the staff can view or download for one application. */
+export interface ApplicationFile {
+  readonly id: number
+  readonly kind: 'uploaded' | 'official'
+  readonly title: string
+  readonly status: string | null
+  readonly availableToApplicant: boolean | null
+  readonly previewable: boolean
 }
 
 /** A row of the staff summaries call for either resource. */
 export type Summary = ApplicationSummary | DocumentSummary
+/** Whether a document URL opens a preview or downloads the file. */
+export type DocumentMode = 'view' | 'download'
 
 /** The result of one write. */
 export type RecordOutcome =
@@ -69,6 +82,10 @@ export interface ConfirmApi {
   loadPending(id: string): Promise<PendingView>
   /** Names and current statuses for the records (applications unless told otherwise); fails `sign-in` or `unavailable`. */
   loadSummaries(ids: readonly number[], resource?: Resource): Promise<readonly Summary[]>
+  /** Staff-only files for one application; fails `sign-in` or `unavailable`. */
+  loadDocuments(applicationId: number): Promise<readonly ApplicationFile[]>
+  /** Same-origin URL for a validated document id and kind. */
+  documentUrl(kind: ApplicationFile['kind'], id: number, mode: DocumentMode): string
   /** Use the batch up so it cannot run again: a confirm does this, and so does Cancel. */
   claim(id: string): Promise<void>
   /** Mint the 2-minute write token for exactly this action, these records and this reason. */
@@ -134,6 +151,33 @@ function documentSummary(value: unknown): DocumentSummary {
     reference: reference as string,
     documentType: documentType as string,
     status: status as string,
+    previewable: typeof value.previewable === 'boolean' ? value.previewable : false,
+  }
+}
+
+function nullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function nullableBoolean(value: unknown): value is boolean | null {
+  return value === null || typeof value === 'boolean'
+}
+
+function applicationFile(value: unknown): ApplicationFile {
+  if (!isRecord(value) || !isId(value.id) || (value.kind !== 'uploaded' && value.kind !== 'official')) {
+    throw new ConfirmApiError('unavailable')
+  }
+  if (typeof value.title !== 'string' || typeof value.previewable !== 'boolean'
+    || !nullableString(value.status) || !nullableBoolean(value.available_to_applicant)) {
+    throw new ConfirmApiError('unavailable')
+  }
+  return {
+    id: value.id,
+    kind: value.kind,
+    title: value.title,
+    status: value.status,
+    availableToApplicant: value.available_to_applicant,
+    previewable: value.previewable,
   }
 }
 
@@ -187,7 +231,27 @@ export function createConfirmApi(options: ConfirmApiOptions): ConfirmApi {
     return new ConfirmApiError('unavailable')
   }
 
+  const documentPath = (kind: ApplicationFile['kind'], id: number, mode: DocumentMode): string =>
+    `${apiPath}/admissions/staff/documents/${kind}/${id}/${mode}/`
+
   return {
+    documentUrl(kind, id, mode) {
+      if (!isId(id)) throw new TypeError('Invalid document id')
+      return documentPath(kind, id, mode)
+    },
+
+    async loadDocuments(applicationId) {
+      if (!isId(applicationId)) throw new ConfirmApiError('unavailable')
+      const response = await send(options, `${apiPath}/admissions/staff/applications/${applicationId}/documents/`, {
+        method: 'GET', headers: { Accept: 'application/json' },
+      })
+      if (response.status === 401 || response.status === 403) throw new ConfirmApiError('sign-in')
+      if (!response.ok) throw new ConfirmApiError('unavailable')
+      const body = await readJson(response)
+      if (!isRecord(body) || !Array.isArray(body.documents)) throw new ConfirmApiError('unavailable')
+      return body.documents.map(applicationFile)
+    },
+
     async loadPending(id) {
       const response = await send(options, pendingUrl(id), { method: 'GET', headers: { Accept: 'application/json' } })
       if (!response.ok) throw pendingFailure(response.status)

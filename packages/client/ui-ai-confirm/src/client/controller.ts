@@ -106,6 +106,23 @@ export async function cancelCard(api: ConfirmApi, sink: CardSink, batch: Prepare
 }
 
 /**
+ * Load staff-only files for one application and retain the classified failure for the card.
+ * @param api - the network faces.
+ * @param sink - the store's state changes.
+ * @param key - the logged call's id.
+ * @param applicationId - the application whose files to load.
+ * @returns once the files are loaded or failed.
+ */
+export async function openDocuments(api: ConfirmApi, sink: CardSink, key: string, applicationId: number): Promise<void> {
+  sink.filesBegin(key)
+  try {
+    sink.filesLoaded(key, await api.loadDocuments(applicationId))
+  } catch (error) {
+    sink.filesFailed(key, kindOf(error))
+  }
+}
+
+/**
  * Load the names for a read card's applications, once per call. Any failure leaves the card
  * without names (the card says so); a name that looks like an email address is dropped, because
  * the staff call falls back to the login email when an account has no name.

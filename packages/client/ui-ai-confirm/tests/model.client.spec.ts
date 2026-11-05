@@ -1,6 +1,6 @@
 /** Prepared-batch parsing and the static tables the card reads. */
 import { describe, expect, it } from 'vitest'
-import { ACTIONS, isId, isRecord, parsePrepared, statusAfter, shownName, statusKey, wireName } from '../src/client/model.ts'
+import { ACTIONS, isId, isRecord, parsePrepared, shownApplicationIds, statusAfter, shownName, statusKey, wireName } from '../src/client/model.ts'
 
 const ID = '0b1d2c3e-4f50-4a61-8b72-93a4b5c6d7e8'
 
@@ -116,5 +116,29 @@ describe('tables', () => {
     expect(statusAfter('application_document.verify')).toBe('VERIFIED')
     expect(statusAfter('application_document.reject')).toBe('REJECTED')
     expect(statusAfter('application.delete')).toBeUndefined()
+  })
+})
+
+describe('shownApplicationIds', () => {
+  const read = (text: string) => shownApplicationIds('mcp__cinhed__get_application', undefined, text)
+  const app = JSON.stringify({ applications: [{ id: 7, reference: 'APP-7', status: 'DRAFT', program: { name: 'Nursing' } }] })
+
+  it('reads application ids from a read result', () => {
+    expect(read(app)).toEqual([7])
+    expect(read('not json')).toEqual([])
+  })
+
+  it('reads application ids from an application prepare call', () => {
+    expect(shownApplicationIds('mcp__cinhed__prepare_approve', JSON.stringify({ ids: [7, 8] }), '')).toEqual([7, 8])
+  })
+
+  it('reads and dedupes application ids from a document prepare call', () => {
+    const args = JSON.stringify({ documents: [{ applicationId: 7, documentId: 12 }, { applicationId: 7, documentId: 13 }] })
+    expect(shownApplicationIds('mcp__cinhed__prepare_verify_document', args, '')).toEqual([7])
+  })
+
+  it('ignores a malformed prepare call', () => {
+    expect(shownApplicationIds('mcp__cinhed__prepare_approve', '{bad', '')).toEqual([])
+    expect(shownApplicationIds('mcp__cinhed__prepare_approve', undefined, '')).toEqual([])
   })
 })

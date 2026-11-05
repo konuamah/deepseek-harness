@@ -1,7 +1,7 @@
 import { useEffect, useId } from 'react'
-import { Button, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconWarningOutlineRegular, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
+import type { CardData } from './card-definition.ts'
 import type { ConfirmApi, RecordOutcome, Summary } from './api.ts'
 import { cancelCard, confirmCard, openCard } from './controller.ts'
 import { EMPTY_CARD, type CardState, type createConfirmStore } from './confirm-store.ts'
@@ -19,7 +19,7 @@ export interface ConfirmInjected {
 }
 
 /** Full props of a registered confirm card. */
-export type ConfirmCardProps = ToolCallViewProps
+export type ConfirmCardProps = CardData
   & PropsStore<ReturnType<typeof createConfirmStore>>
   & InjectFace<ConfirmInjected>
   & PropsLocale<'aiConfirm'>
@@ -42,11 +42,6 @@ const WARNINGS: Partial<Record<ActionSpec['copy'], AiConfirmKey>> = {
   rejectDocument: 'warning.rejectDocument',
 }
 
-/** The result's text parts joined; a non-text part carries nothing this card reads. */
-export function resultText(block: Extract<ConfirmCardProps, { phase: 'result' }>['block']): string {
-  return block.content.flatMap(part => (part.type === 'text' ? [part.text] : [])).join('\n')
-}
-
 export function statusLabel(t: Translate, status: string): string {
   const key = statusKey(status)
   return key === undefined ? status : t(key)
@@ -55,21 +50,21 @@ export function statusLabel(t: Translate, status: string): string {
 /**
  * Render one prepare tool call: a plain row while it runs or when it failed, and the confirm card
  * once it returns a batch.
- * @param props - keyed toolview payload, the card store, the injected faces and the locale seat.
+ * @param props - logged card data, the card store, the injected faces and the locale seat.
  * @returns the card.
  */
 export function ConfirmCard(props: ConfirmCardProps) {
   const { t } = props
   if (props.phase !== 'result') {
-    const label = props.phase === 'preparing' ? t('call.preparing') : t('call.running')
+    const label = t('call.running')
     return (
       <div className={css.card} data-tool="ai-confirm" data-state="running">
         <TextShimmer active className={css.status}>{label}</TextShimmer>
       </div>
     )
   }
-  const text = resultText(props.block)
-  const batch = props.block.isError ? null : parsePrepared(text)
+  const text = props.text
+  const batch = props.isError ? null : parsePrepared(text)
   if (batch === null) {
     return (
       <div className={css.card} data-tool="ai-confirm" data-state="failed">
@@ -98,6 +93,13 @@ function viewOf(card: CardState, spec: ActionSpec, batch: PreparedBatch) {
   }
 }
 
+/** Whether every record in a closed batch now holds the status the batch asked for. */
+function closedMatches(card: CardState, spec: ActionSpec, batch: PreparedBatch): boolean {
+  const requested = statusAfter(spec.action)
+  return card.phase === 'expired' && requested !== undefined
+    && batch.eligible.every(record => card.summaries.some(summary => summary.id === record.id && summary.status === requested))
+}
+
 function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchCardProps) {
   const key = batch.pendingActionId
   const titleId = useId()
@@ -123,6 +125,7 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
             key={record.id}
             t={t}
             id={record.id}
+            api={api}
             resource={spec.resource}
             fallbackStatus={record.status}
             summary={card.summaries.find(summary => summary.id === record.id)}
@@ -147,6 +150,7 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
         t={t}
         card={card}
         total={view.total}
+        closedMatches={closedMatches(card, spec, batch)}
         signInUrl={signInUrl}
         onRetry={() => { void openCard(api, actions, spec, batch) }}
       />
@@ -216,6 +220,7 @@ function Actions({ t, busy, confirmDisabled, onCancel, onConfirm }: ActionsProps
 interface RecordRowProps {
   readonly t: Translate
   readonly id: number
+  readonly api: ConfirmApi
   readonly resource: ActionSpec['resource']
   readonly fallbackStatus: string
   readonly summary: Summary | undefined
@@ -224,7 +229,7 @@ interface RecordRowProps {
   readonly outcome: RecordOutcome | undefined
 }
 
-function RecordRow({ t, id, resource, fallbackStatus, summary, after, phase, outcome }: RecordRowProps) {
+function RecordRow({ t, id, api, resource, fallbackStatus, summary, after, phase, outcome }: RecordRowProps) {
   const current = summary?.status ?? fallbackStatus
   const pending = (phase === 'ready' || phase === 'confirming') && outcome === undefined
   const meta = summary === undefined ? '' : `${summary.reference} · ${'documentType' in summary ? summary.documentType : summary.program.code}`
@@ -233,6 +238,12 @@ function RecordRow({ t, id, resource, fallbackStatus, summary, after, phase, out
     <li className={css.record}>
       <span className={css.name}>{name}</span>
       {meta !== '' && <span className={css.meta}>{meta}</span>}
+      {summary !== undefined && 'documentType' in summary && (
+        <span className={css.fileLinks}>
+          {summary.previewable && <a href={api.documentUrl('uploaded', summary.id, 'view')} target="_blank" rel="noopener noreferrer">{t('files.view')}</a>}
+          <a href={api.documentUrl('uploaded', summary.id, 'download')} target="_blank" rel="noopener noreferrer">{t('files.download')}</a>
+        </span>
+      )}
       <span className={css.status}>
         {pending && after !== undefined
           ? t('change', { from: statusLabel(t, current), to: statusLabel(t, after) })
@@ -280,12 +291,13 @@ interface BannerProps {
   readonly t: Translate
   readonly card: CardState
   readonly total: number
+  readonly closedMatches: boolean
   readonly signInUrl: string
   readonly onRetry: () => void
 }
 
 /** The one status message for the card's phase, announced politely to assistive technology. */
-function Banner({ t, card, total, signInUrl, onRetry }: BannerProps) {
+function Banner({ t, card, total, closedMatches, signInUrl, onRetry }: BannerProps) {
   const { phase } = card
   if (phase === 'ready') return null
   if (phase === 'loading') {
@@ -303,13 +315,16 @@ function Banner({ t, card, total, signInUrl, onRetry }: BannerProps) {
   const retryable = phase === 'sign-in' || phase === 'unavailable'
   const message = {
     'sign-in': t('state.signIn'),
-    expired: t('state.expired'),
+    expired: closedMatches ? `${t('state.expired')} ${t('state.closedMatches')}` : t('state.expired'),
     refused: t('state.refused'),
     unavailable: t('state.unavailable'),
     cancelled: t('state.cancelled'),
   }[phase]
+  // A closed request is not a failure: keep the calm secondary style, without the failure divider.
+  const failed = phase !== 'expired' && phase !== 'cancelled'
   return (
-    <div role="status" className={css.banner} data-failure={phase === 'cancelled' ? undefined : phase}>
+    <div role={failed ? 'alert' : 'status'} className={css.banner} data-failure={failed ? phase : undefined}>
+      {failed && <span className={css.bannerIcon} aria-hidden="true"><IconWarningOutlineRegular /></span>}
       <span>{message}</span>
       {phase === 'sign-in' && (
         <a href={signInUrl} target="_blank" rel="noopener noreferrer" className={css.link}>{t('action.signIn')}</a>

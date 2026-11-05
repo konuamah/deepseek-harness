@@ -1,45 +1,84 @@
-/* AI applications card: a bordered compact table, with one note line while names load or when they could not. */
+/* Staff lookup card, with separate sections for records and private files. */
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
-  padding: 12px;
+  padding: 16px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font-size: calc(13px + var(--dsh-content-font-delta, 0px));
-  line-height: 1.45;
-  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toggle {
+  align-self: flex-end;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .title {
-  margin: 0;
-  font-size: inherit;
-  font-weight: 600;
+  margin: -16px -16px 0;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-lg) var(--dsw-radius-lg) 0 0;
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: calc(14px + var(--dsh-content-font-delta, 0px));
+  font-weight: 500;
+}
+
+.tableScroll {
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .table {
   border-collapse: collapse;
   width: 100%;
   text-align: start;
+  font-variant-numeric: tabular-nums;
 }
 
 .table th,
 .table td {
-  padding: 4px 12px 4px 0;
-  vertical-align: baseline;
+  padding: 8px 16px 8px 0;
+  vertical-align: top;
   text-align: start;
 }
 
+.table th:last-child,
+.table td:last-child {
+  padding-inline-end: 0;
+}
+
 .table th {
-  color: var(--dsw-alias-label-tertiary);
+  padding-top: 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
   font-size: calc(12px + var(--dsh-content-font-delta, 0px));
   font-weight: 500;
 }
 
+.table tbody tr + tr {
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.table td:nth-child(2) {
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .name {
+  min-width: 100px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -49,5 +88,67 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin: 0;
   color: var(--dsw-alias-label-secondary);
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-top: 16px;
+}
+
+.files h4 {
+  margin: 0 0 8px;
+  font-size: inherit;
+  font-weight: 500;
+}
+
+.files ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+  padding: 8px 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.files li + li {
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.files li > span:first-child {
+  flex: 1 1 160px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.fileLinks {
+  display: inline-flex;
+  gap: 12px;
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.files a {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .table {
+    min-width: 480px;
+  }
 }
