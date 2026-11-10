@@ -1,5 +1,6 @@
 import { useEffect, useId } from 'react'
-import { Button, IconWarningOutlineRegular, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import clsx from 'clsx'
+import { Button, IconWarningOutlineRegular, Input, Tag, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CardData } from './card-definition.ts'
 import type { ConfirmApi, RecordOutcome, Summary } from './api.ts'
@@ -33,13 +34,19 @@ const TITLES = {
   cancel: ['title.cancel.one', 'title.cancel.other'],
   verifyDocument: ['title.verifyDocument.one', 'title.verifyDocument.other'],
   rejectDocument: ['title.rejectDocument.one', 'title.rejectDocument.other'],
+  enroll: ['title.enroll.one', 'title.enroll.other'],
+  sendOffer: ['title.sendOffer.one', 'title.sendOffer.other'],
 } as const satisfies Record<ActionSpec['copy'], readonly [AiConfirmKey, AiConfirmKey]>
 
-/** What an action does that staff must know before confirming; the first three have no extra warning. */
+/** Consequences staff must see before confirming. */
 const WARNINGS: Partial<Record<ActionSpec['copy'], AiConfirmKey>> = {
+  approve: 'warning.approve',
+  requestDocuments: 'warning.requestDocuments',
   cancel: 'warning.cancel',
   verifyDocument: 'warning.verifyDocument',
   rejectDocument: 'warning.rejectDocument',
+  enroll: 'warning.enroll',
+  sendOffer: 'warning.sendOffer',
 }
 
 export function statusLabel(t: Translate, status: string): string {
@@ -83,7 +90,12 @@ function viewOf(card: CardState, spec: ActionSpec, batch: PreparedBatch) {
   const busy = card.phase === 'confirming'
   const reason = card.reason.trim()
   const ids = card.pending?.ids ?? batch.eligible.map(record => record.id)
+  const reference = ids.length === 1 ? card.summaries.find(summary => summary.id === ids[0])?.reference : undefined
+  const referenceMissing = spec.confirmReference === true
+    && (!reference || card.confirmReference !== reference || batch.eligible.length !== 1)
   return {
+    reference,
+    referenceMissing,
     busy,
     editable: card.phase === 'ready' || busy,
     reason,
@@ -140,10 +152,20 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
       {spec.reason !== 'none' && view.editable && (
         <ReasonField
           t={t}
+          label={spec.copy === 'enroll' ? 'reason.enrollLabel' : 'reason.label'}
           value={card.reason}
           disabled={view.busy}
           missing={view.reasonMissing}
           onChange={(reason) => { actions.editReason(key, reason) }}
+        />
+      )}
+      {spec.confirmReference && view.editable && (
+        <ReferenceField
+          t={t}
+          reference={view.reference}
+          value={card.confirmReference}
+          disabled={view.busy}
+          onChange={(reference) => { actions.editReference(key, reference) }}
         />
       )}
       <Banner
@@ -158,10 +180,11 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
         <Actions
           t={t}
           busy={view.busy}
-          confirmDisabled={view.reasonMissing}
+          confirmDisabled={view.reasonMissing || view.referenceMissing}
           onCancel={() => { void cancelCard(api, actions, batch) }}
           onConfirm={() => {
-            void confirmCard(api, actions, spec, batch, view.ids, spec.reason === 'none' ? '' : view.reason)
+            if (view.busy || view.reasonMissing || view.referenceMissing) return
+            void confirmCard(api, actions, spec, batch, view.ids, spec.reason === 'none' ? '' : view.reason, card.confirmReference)
           }}
         />
       )}
@@ -169,8 +192,40 @@ function BatchCard({ batch, spec, api, signInUrl, t, useStore, actions }: BatchC
   )
 }
 
+interface ReferenceFieldProps {
+  readonly t: Translate
+  readonly reference: string | undefined
+  readonly value: string
+  readonly disabled: boolean
+  readonly onChange: (reference: string) => void
+}
+
+function ReferenceField({ t, reference, value, disabled, onChange }: ReferenceFieldProps) {
+  const hintId = useId()
+  return (
+    <div className={css.reason}>
+      <label className={css.reasonLabel}>
+        <span>{t('reference.label')}</span>
+        <Input
+          className={clsx(css.referenceInput)}
+          value={value}
+          maxLength={32}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={disabled || !reference}
+          aria-describedby={hintId}
+          aria-invalid={value !== '' && value !== reference}
+          onChange={(event) => { onChange(event.target.value) }}
+        />
+      </label>
+      <span id={hintId}>{reference ? t('reference.hint', { reference }) : t('reference.unavailable')}</span>
+    </div>
+  )
+}
+
 interface ReasonFieldProps {
   readonly t: Translate
+  readonly label: AiConfirmKey
   readonly value: string
   readonly disabled: boolean
   readonly missing: boolean
@@ -178,12 +233,12 @@ interface ReasonFieldProps {
 }
 
 /** The editable reason. The error sits outside the label so it does not become part of the field's name. */
-function ReasonField({ t, value, disabled, missing, onChange }: ReasonFieldProps) {
+function ReasonField({ t, label, value, disabled, missing, onChange }: ReasonFieldProps) {
   const errorId = useId()
   return (
     <div className={css.reason}>
       <label className={css.reasonLabel}>
-        <span>{t('reason.label')}</span>
+        <span>{t(label)}</span>
         <textarea
           value={value}
           maxLength={MAX_REASON_LENGTH}

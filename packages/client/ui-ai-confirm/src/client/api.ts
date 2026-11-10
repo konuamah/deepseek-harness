@@ -89,9 +89,9 @@ export interface ConfirmApi {
   /** Use the batch up so it cannot run again: a confirm does this, and so does Cancel. */
   claim(id: string): Promise<void>
   /** Mint the 2-minute write token for exactly this action, these records and this reason. */
-  mintWriteToken(spec: ActionSpec, ids: readonly number[], reason: string): Promise<string>
+  mintWriteToken(spec: ActionSpec, ids: readonly number[], reason: string, confirmReference?: string): Promise<string>
   /** Run one write with the write token. Never throws for an expected refusal. */
-  write(spec: ActionSpec, id: number, token: string, reason: string): Promise<RecordOutcome>
+  write(spec: ActionSpec, id: number, token: string, reason: string, confirmReference?: string): Promise<RecordOutcome>
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' }
@@ -275,10 +275,11 @@ export function createConfirmApi(options: ConfirmApiOptions): ConfirmApi {
       if (!response.ok) throw pendingFailure(response.status)
     },
 
-    async mintWriteToken(spec, ids, reason) {
+    async mintWriteToken(spec, ids, reason, confirmReference = '') {
       const csrf = await csrfToken(options)
       const body: Record<string, unknown> = { kind: 'write', action: spec.action, ids }
       if (spec.reason !== 'none' && reason !== '') body.reason = reason
+      if (spec.confirmReference) body.confirm_reference = confirmReference
       const response = await send(options, `${apiPath}/ai/token/`, {
         method: 'POST',
         headers: { ...JSON_HEADERS, 'X-CSRFToken': csrf },
@@ -290,8 +291,11 @@ export function createConfirmApi(options: ConfirmApiOptions): ConfirmApi {
       return minted.token
     },
 
-    async write(spec, id, token, reason) {
-      const body = spec.reason !== 'none' && reason !== '' ? JSON.stringify({ reason }) : '{}'
+    async write(spec, id, token, reason, confirmReference = '') {
+      const payload: Record<string, string> = {}
+      if (spec.reason !== 'none' && reason !== '') payload.reason = reason
+      if (spec.confirmReference) payload.confirm_reference = confirmReference
+      const body = JSON.stringify(payload)
       let response: Response
       try {
         response = await options.fetch(`${apiPath}/admissions/${WRITE_SEGMENT[spec.resource]}/${id}/${spec.endpoint}/`, {

@@ -57,6 +57,7 @@ export async function openCard(api: ConfirmApi, sink: CardSink, spec: ActionSpec
  * @param batch - the prepare tool's result.
  * @param ids - the records the tool service holds for this batch.
  * @param reason - the reason as staff finalised it; empty when the action takes none.
+ * @param confirmReference - the reference staff retyped for a single-record irreversible action.
  * @returns once the card is `done` or has stopped on a failure it explains.
  */
 export async function confirmCard(
@@ -66,15 +67,20 @@ export async function confirmCard(
   batch: PreparedBatch,
   ids: readonly number[],
   reason: string,
+  confirmReference = '',
 ): Promise<void> {
   const key = batch.pendingActionId
+  if (spec.confirmReference && (ids.length !== 1 || confirmReference === '')) {
+    sink.failed(key, 'refused')
+    return
+  }
   try {
     sink.confirming(key, 'token')
-    const token = await api.mintWriteToken(spec, ids, reason)
+    const token = await api.mintWriteToken(spec, ids, reason, confirmReference)
     sink.confirming(key, 'claim')
     await api.claim(key)
     sink.confirming(key, 'write')
-    for (const id of ids) sink.recorded(key, id, await api.write(spec, id, token, reason))
+    for (const id of ids) sink.recorded(key, id, await api.write(spec, id, token, reason, confirmReference))
   } catch (error) {
     sink.failed(key, kindOf(error))
     return

@@ -41,6 +41,19 @@ async function kind(promise: Promise<unknown>): Promise<string | undefined> {
 const PENDING = { id: ID, action: 'application.approve', ids: [7, 8], reason: 'Draft', expiresAt: '2026-11-03T15:00:00.000Z' }
 const SUMMARY = { id: 7, name: 'Ama Mensah', reference: 'APP-7', status: 'UNDER_REVIEW', program: { code: 'NUR', name: 'Nursing' } }
 
+describe('reference-confirmed writes', () => {
+  it.each(['application.enroll', 'offer.send'])('binds the retyped reference to mint and write for %s', async (action) => {
+    const spec = ACTIONS.find(candidate => candidate.action === action)!
+    const { api, calls } = scripted([json({ csrfToken: 'csrf' }), json({ token: 'write-token' }), json({})])
+    await api.mintWriteToken(spec, [7], 'Staff decision', 'APP-7')
+    await api.write(spec, 7, 'write-token', 'Staff decision', 'APP-7')
+    const reason = spec.reason === 'none' ? {} : { reason: 'Staff decision' }
+    expect(JSON.parse(calls[1]!.init.body as string)).toEqual({ kind: 'write', action, ids: [7], ...reason, confirm_reference: 'APP-7' })
+    expect(JSON.parse(calls[2]!.init.body as string)).toEqual({ ...reason, confirm_reference: 'APP-7' })
+    expect(calls[2]!.init.headers).toMatchObject({ Authorization: 'Bearer write-token' })
+  })
+})
+
 describe('loadPending', () => {
   it('reads the batch from the tool service', async () => {
     const { api, calls } = scripted([json(PENDING)])

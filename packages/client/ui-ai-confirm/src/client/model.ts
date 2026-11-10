@@ -1,5 +1,5 @@
 /**
- * What the confirm card understands about a prepared batch: the six prepare tools, the batch the
+ * What the confirm card understands about a prepared batch: the prepare tools, the batch the
  * tool service describes in its result text, and the display keys for application statuses.
  * Pure data and validation; nothing here reads the Session, the network or the DOM.
  */
@@ -21,11 +21,13 @@ export interface ActionSpec {
   /** Last path segment of the Django write call: `/<applications|application-documents>/<id>/<endpoint>/`. */
   readonly endpoint: string
   /** Locale key prefix for this action's copy. */
-  readonly copy: 'approve' | 'reject' | 'requestDocuments' | 'cancel' | 'verifyDocument' | 'rejectDocument'
+  readonly copy: 'approve' | 'reject' | 'requestDocuments' | 'cancel' | 'verifyDocument' | 'rejectDocument' | 'enroll' | 'sendOffer'
   readonly reason: ReasonRule
+  /** Staff must also retype the application reference; Django checks it too. */
+  readonly confirmReference?: boolean
 }
 
-/** The six prepare tools, in the order the tool service lists them. */
+/** The prepare tools, in the order the tool service lists them. */
 export const ACTIONS: readonly ActionSpec[] = [
   {
     tool: 'prepare_approve', action: 'application.approve', resource: 'application',
@@ -54,6 +56,14 @@ export const ACTIONS: readonly ActionSpec[] = [
   {
     tool: 'prepare_reject_document', action: 'application_document.reject', resource: 'document',
     endpoint: 'reject_document', copy: 'rejectDocument', reason: 'required',
+  },
+  {
+    tool: 'prepare_enroll', action: 'application.enroll', resource: 'application',
+    endpoint: 'enroll', copy: 'enroll', reason: 'required', confirmReference: true,
+  },
+  {
+    tool: 'prepare_send_offer', action: 'offer.send', resource: 'application',
+    endpoint: 'send_offer', copy: 'sendOffer', reason: 'none', confirmReference: true,
   },
 ]
 
@@ -225,6 +235,7 @@ export function shownApplicationIds(toolName: string, args: string | undefined, 
     return []
   }
   if (!isRecord(value)) return []
+  if (isId(value.id)) return [value.id]
   if (Array.isArray(value.ids)) return value.ids.filter(isId)
   if (Array.isArray(value.documents)) {
     const ids = new Set<number>()
@@ -269,6 +280,7 @@ const RESULT_STATUS: Readonly<Record<string, string>> = {
   'application.reject': 'REJECTED',
   'application.request_documents': 'DOCUMENTS_REQUIRED',
   'application.cancel': 'CANCELLED',
+  'application.enroll': 'ENROLLED',
   'application_document.verify': 'VERIFIED',
   'application_document.reject': 'REJECTED',
 }

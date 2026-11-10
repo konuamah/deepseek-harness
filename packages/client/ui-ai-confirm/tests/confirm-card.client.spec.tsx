@@ -409,12 +409,12 @@ describe('the cancel and document cards', () => {
     expect(minted).toEqual([{ ids: [12, 13], reason: 'Scan is cut off' }])
   })
 
-  it('shows no extra warning on the original three actions', async () => {
+  it('warns on approve that a student login is created', async () => {
     const { api } = fakeApi()
 
     render(<ConfirmCard {...props({ store: newStore(), api })} />)
     await settle()
 
-    expect(screen.queryByRole('note')).toBeNull()
+    expect(screen.getByRole('note').textContent).toContain('creates the applicant')
   })
 })

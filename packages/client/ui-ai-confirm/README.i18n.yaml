@@ -3,23 +3,23 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-ai-confirm/README.md
 /:
-  en: 5a7cacf5a0c65c69
-  zh: 6ed70bd11c7ec11a
+  en: ffb6f68044762763
+  zh: 9a868b54f372019a
 /deepseek-ai-dsh-client-ui-ai-confirm:
   en: 6553c83b18233f85
   zh: ef7b3aff16617299
 /deepseek-ai-dsh-client-ui-ai-confirm/summary:
-  en: 2c9571cbd8bc5da7
-  zh: 90cd130b8ab49944
+  en: 4b13243588c8a986
+  zh: 7fe0050b518925f4
 /deepseek-ai-dsh-client-ui-ai-confirm/table-of-contents:
   en: d152484eb41ac6b4
   zh: d152484eb41ac6b4
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package:
-  en: 609263c0ad673b42
-  zh: 2a4364776e8d57c2
+  en: d3a58378d576b6ac
+  zh: 68e4f64bb59f92e1
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/what-staff-see:
-  en: 0b823b1a45dfdfd8
-  zh: 4f77d61d5d83911e
+  en: e46ae40d3d1330f2
+  zh: bf5108aaef61f2c7
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/applications-cards:
   en: 3a463044319361c6
   zh: ab4f5fbb8c4d5561
@@ -51,8 +51,8 @@
   en: f5898f4b29bfdc27
   zh: f5898f4b29bfdc27
 /deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch/what-the-model-sees:
-  en: 1ef2d3b0b09f2013
-  zh: 7e7cd422ffbab78e
+  en: f1033799568d508d
+  zh: 1702472e6bd48db9
 /deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch/token-effect:
   en: 5eed36a8feed3c7a
   zh: b778d7bde999b35d
@@ -60,8 +60,8 @@
   en: 07760e9d353e9256
   zh: a6377f1ba32ed036
 /deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work:
-  en: 59494b15e33ff6cf
-  zh: 61aee9f95c64052b
+  en: 60205460c74963b7
+  zh: 74b1a7083de8343e
 /deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work/dev-note:
   en: cbd1d5fc732e2c0c
   zh: 45f66e768bf30e44

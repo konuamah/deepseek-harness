@@ -8,8 +8,8 @@ import type { ConfirmCardProps } from '../src/client/ConfirmCard.tsx'
 import { en } from '../src/client/locales.ts'
 import { ACTIONS, type ActionSpec } from '../src/client/model.ts'
 
-export const [APPROVE, REJECT, REQUEST_DOCUMENTS, CANCEL, VERIFY_DOCUMENT, REJECT_DOCUMENT] = ACTIONS as unknown as [
-  ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec,
+export const [APPROVE, REJECT, REQUEST_DOCUMENTS, CANCEL, VERIFY_DOCUMENT, REJECT_DOCUMENT, ENROLL, SEND_OFFER] = ACTIONS as [
+  ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec, ActionSpec,
 ]
 export const KEY = '0b1d2c3e-4f50-4a61-8b72-93a4b5c6d7e8'
 export const t = makeTranslate(en)
@@ -53,7 +53,7 @@ export interface Script {
 export function fakeApi(script: Script = {}) {
   const calls: string[] = []
   const resources: (string | undefined)[] = []
-  const minted: { ids: readonly number[]; reason: string }[] = []
+  const minted: { ids: readonly number[]; reason: string; confirmReference?: string }[] = []
   const fail = (kind: FailureKind): never => { throw new ConfirmApiError(kind) }
   const api: ConfirmApi = {
     async loadPending(id) {
@@ -79,10 +79,10 @@ export function fakeApi(script: Script = {}) {
       calls.push('claim')
       if (script.claim !== undefined) fail(script.claim)
     },
-    async mintWriteToken(_spec, ids, reason) {
+    async mintWriteToken(spec, ids, reason, confirmReference = '') {
       calls.push('mint')
       if (script.mint !== undefined) fail(script.mint)
-      minted.push({ ids, reason })
+      minted.push({ ids, reason, ...(spec.confirmReference ? { confirmReference } : {}) })
       return 'write-token'
     },
     async write(_spec, id) {

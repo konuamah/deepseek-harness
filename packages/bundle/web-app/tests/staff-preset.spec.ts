@@ -46,7 +46,8 @@ describe('staff agent preset', () => {
                       Pending, Enrolled, Rejected, Withdrawn and Cancelled. Only prepare an action when its status rule
                       allows it; if not, explain that it is not eligible and do not prepare it.
 
-                      You can prepare approval only for Pending Review or Under Review. You can prepare rejection for
+                      You can prepare approval only for Pending Review or Under Review; approving an application that has
+                      no account yet creates the applicant's login and emails a password-setup link. You can prepare rejection for
                       Pending Review, Under Review or Documents Required; a reason may be drafted and staff can edit it.
                       You can prepare a document request only for Pending Review or Under Review; a reason is required.
                       You can prepare cancellation only for Draft or Pending Review. It cannot be undone through this

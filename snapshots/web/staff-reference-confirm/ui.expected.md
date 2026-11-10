@@ -1,0 +1,49 @@
+- banner:
+  - navigation "Session hierarchy": {{workspace}}
+  - text: staff
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Prepare manual enrolment for application 2048 and sending the draft offer for application 2049. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- button "Hide details" [expanded]
+- region "Enrol 1 application":
+  - heading "Enrol 1 application" [level=3]
+  - list "Applications in this batch":
+    - listitem: Synthetic Applicant APP-2048 · MSc Approved → Enrolled
+  - note: No payment is needed. This creates the student ID and a semester invoice. It cannot be undone.
+  - text: Reason for manual enrolment (staff only)
+  - textbox "Reason for manual enrolment (staff only)": Synthetic fee waiver
+  - text: Retype the application reference to confirm
+  - textbox "Retype the application reference to confirm"
+  - text: Enter APP-2048 exactly.
+  - button "Cancel"
+  - button "Confirm" [disabled]
+- button "Hide details" [expanded]
+- region "Send 1 offer letter":
+  - heading "Send 1 offer letter" [level=3]
+  - list "Applications in this batch":
+    - listitem: Synthetic Applicant APP-2049 · MSc Approved
+  - note: The offer letter is emailed to the applicant. This cannot be undone.
+  - text: Retype the application reference to confirm
+  - textbox "Retype the application reference to confirm"
+  - text: Enter APP-2049 exactly.
+  - button "Cancel"
+  - button "Confirm" [disabled]
+- paragraph: Review each card before confirming.
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps"

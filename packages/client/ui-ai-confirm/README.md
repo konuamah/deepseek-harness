@@ -1,5 +1,5 @@
 ---
-description: "Web confirm card for the six prepare tools of the CInHEd tool service: shows a prepared batch with names, lets staff edit the reason, and writes after a click."
+description: "Web confirm card for the eight prepare tools of the CInHEd tool service: shows a prepared batch with names, lets staff edit the reason, and writes after a click."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, and `prepare_reject_document` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible.
+`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, `prepare_reject_document`, `prepare_enroll`, and `prepare_send_offer` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible.
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ The row ships `disabled: true` in the Web bundle. Turn it on in the profile patc
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, `..._prepare_request_documents`, `..._prepare_cancel`, `..._prepare_verify_document`, and `..._prepare_reject_document`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
+| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, `..._prepare_request_documents`, `..._prepare_cancel`, `..._prepare_verify_document`, `..._prepare_reject_document`, `..._prepare_enroll`, and `..._prepare_send_offer`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
 | `toolsPath` | `/tools/pending` | Page path a reverse proxy forwards to the tool service's pending-batch routes. |
 | `apiPath` | `/api/v1` | Page path a reverse proxy forwards to Django's API. |
 | `signInUrl` | `/login` | Page that signs staff in with login and 2FA. Opened in a new tab. |
@@ -50,6 +50,8 @@ Application and confirm cards appear inline in the conversation with shaded head
 The three document and cancel actions add a warning line: cancelling an application cannot be undone and the applicant is not told; verifying or rejecting a document emails the applicant, and a rejection sends the reason as written and may move the application to documents required. Document batches list their ids as document ids, and each row shows name, reference, document type, and the status change (for example, "Pending review → Verified"), loaded from the staff-only document-summaries call. Uploaded and official files have Download links; previewable files also have a View link. A name that is empty or looks like an email address shows as a dash.
 
 Confirm runs in this order: check the sign-in and mint the write token, use the batch up, then write one record at a time. Each record gets its own outcome (changed, or the reason Django refused). Cancel uses the batch up without writing. A closed batch (expired, used, or unable to load) shows a calm message and each application's current status; it names the requested status only when every record now has it. A real failure (signed out, refused, or the system did not answer) shows a small warning marker and is announced to assistive technology as an alert; a closed or cancelled request stays calm and unannounced.
+
+Manual enrolment and offer sending accept one application at a time and require staff to retype its exact reference. Enrolment also requires a staff-only reason and warns that no payment is needed and that a student ID and semester invoice will be created. Sending an offer warns that the applicant receives an email; it does not show an application-status change to Sent. The typed reference stays in the browser's in-memory store and is sent only in the token request and Django write body, never in the conversation log.
 
 ### Applications cards
 
@@ -104,7 +106,7 @@ The card derives only from the logged call and result. A result that is not a we
 
 #### What the model sees
 
-The six prepare tool results reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`; these results contain no names or applicant free text. Read-tool results may include applicants' first and last names. The confirm, the write token, browser-loaded names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
+The eight prepare tool results reach the model as ordinary tool output: a `pendingActionId`, the `eligible` and `skipped` record ids with their statuses, and an `expiresAt`; these results contain no names or applicant free text. Read-tool results may include applicants' first and last names. The confirm, the write token, browser-loaded names, and every write outcome stay in the browser and Django, so the model learns whether staff confirmed only if it calls a read tool afterwards.
 
 #### Token effect
 
@@ -124,7 +126,7 @@ None. The package never edits earlier request tokens.
 - **Sign-in is a link** — the card does not host a login form. It opens `signInUrl` in a new tab, and staff return to the card and choose Try again.
 - **Same origin only** — the card relies on the staff session cookie and a reverse proxy; there is no cross-origin mode.
 - **The tool service keeps batches in memory for 15 minutes** — a tool service restart makes the card report an expired batch, and the model must prepare it again.
-- **Browser replay does not exercise writes** — the keyless `staff-cards` scenario covers inline read and preparation cards through the real Web composition with mocked staff APIs; it does not confirm a backend write.
+- **Browser writes are mocked** — keyless Web replay covers card stacking and exact-reference confirmation for enrolment and offer sending, including request payloads and exclusion of typed references and tokens from the Session log. It does not verify real Django writes or email delivery.
 
 <a id="dev-note"></a>
 ### Dev Note

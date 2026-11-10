@@ -72,6 +72,8 @@ describe('apply', () => {
       'mcp__cinhed__prepare_cancel',
       'mcp__cinhed__prepare_verify_document',
       'mcp__cinhed__prepare_reject_document',
+      'mcp__cinhed__prepare_enroll',
+      'mcp__cinhed__prepare_send_offer',
       'mcp__cinhed__list_applications',
       'mcp__cinhed__get_application',
     ])
@@ -97,7 +99,7 @@ describe('apply', () => {
 
     const keys = presentation.slots.entries('tool.call.toolview').map(entry => entry.options.key)
     expect(keys[0]).toBe('mcp__school_ai__prepare_approve')
-    expect(keys.slice(6)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
+    expect(keys.slice(8)).toEqual(['mcp__school_ai__list_applications', 'mcp__school_ai__get_application'])
   })
 
   it('shares one store and the API faces on the Chat node', async () => {
@@ -120,7 +122,7 @@ describe('apply', () => {
 
   it('removes every registration when the plugin is disposed (hot-reload safety)', async () => {
     const { presentation, fiber } = await boot({ serverName: 'cinhed' })
-    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(8)
+    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(10)
     expect(presentation.slots.entries('conversation.chat.node')).toHaveLength(1)
     expect(presentation.cardDefinitions).toHaveLength(1)
 
@@ -159,6 +161,8 @@ describe('apply', () => {
       'mcp__cinhed__prepare_cancel',
       'mcp__cinhed__prepare_verify_document',
       'mcp__cinhed__prepare_reject_document',
+      'mcp__cinhed__prepare_enroll',
+      'mcp__cinhed__prepare_send_offer',
       'mcp__cinhed__list_applications',
       'mcp__cinhed__get_application',
     ])

@@ -21,6 +21,8 @@ export interface CardState {
   readonly summaries: readonly Summary[]
   /** The reason as staff have edited it. */
   readonly reason: string
+  /** Retyped by staff, never populated from the tool result or persisted. */
+  readonly confirmReference: string
   /** Whether staff have typed in the reason, so a reload does not overwrite their words. */
   readonly edited: boolean
   readonly step: ConfirmStep | null
@@ -64,6 +66,7 @@ export interface CardSink {
   failed(key: string, kind: FailureKind): void
   summaries(key: string, summaries: readonly Summary[]): void
   editReason(key: string, reason: string): void
+  editReference(key: string, reference: string): void
   confirming(key: string, step: ConfirmStep): void
   recorded(key: string, id: number, outcome: RecordOutcome): void
   finished(key: string): void
@@ -89,6 +92,7 @@ export const EMPTY_CARD: CardState = {
   pending: null,
   summaries: [],
   reason: '',
+  confirmReference: '',
   edited: false,
   step: null,
   results: {},
@@ -139,6 +143,9 @@ export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmAct
       },
       editReason: (state, key, reason) => {
         update(state, key, { reason, edited: true })
+      },
+      editReference: (state, key, confirmReference) => {
+        update(state, key, { confirmReference })
       },
       confirming: (state, key, step) => {
         update(state, key, { phase: 'confirming', step })

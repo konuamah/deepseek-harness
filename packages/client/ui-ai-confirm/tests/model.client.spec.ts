@@ -72,7 +72,7 @@ describe('guards', () => {
 })
 
 describe('tables', () => {
-  it('names the six prepare tools with the MCP wire prefix', () => {
+  it('names the prepare tools with the MCP wire prefix', () => {
     expect(ACTIONS.map(spec => wireName('cinhed', spec))).toEqual([
       'mcp__cinhed__prepare_approve',
       'mcp__cinhed__prepare_reject',
@@ -80,6 +80,8 @@ describe('tables', () => {
       'mcp__cinhed__prepare_cancel',
       'mcp__cinhed__prepare_verify_document',
       'mcp__cinhed__prepare_reject_document',
+      'mcp__cinhed__prepare_enroll',
+      'mcp__cinhed__prepare_send_offer',
     ])
   })
 
@@ -91,6 +93,8 @@ describe('tables', () => {
       ['application.cancel', 'application', 'cancel', 'none'],
       ['application_document.verify', 'document', 'verify', 'none'],
       ['application_document.reject', 'document', 'reject_document', 'required'],
+      ['application.enroll', 'application', 'enroll', 'required'],
+      ['offer.send', 'application', 'send_offer', 'none'],
     ])
   })
 
@@ -130,6 +134,13 @@ describe('shownApplicationIds', () => {
 
   it('reads application ids from an application prepare call', () => {
     expect(shownApplicationIds('mcp__cinhed__prepare_approve', JSON.stringify({ ids: [7, 8] }), '')).toEqual([7, 8])
+  })
+
+  it('reads a single application id for enrolment and offer send', () => {
+    expect(shownApplicationIds('mcp__cinhed__prepare_enroll', '{"id":7}', '')).toEqual([7])
+    expect(shownApplicationIds('mcp__cinhed__prepare_send_offer', '{"id":8}', '')).toEqual([8])
+    expect(statusAfter('application.enroll')).toBe('ENROLLED')
+    expect(statusAfter('offer.send')).toBeUndefined()
   })
 
   it('reads and dedupes application ids from a document prepare call', () => {

@@ -1,5 +1,5 @@
 ---
-description: "CInHEd 工具服务六个 prepare 工具的网页确认卡片：显示已准备的批次和姓名，允许员工修改原因，并在点击后写入。"
+description: "CInHEd 工具服务八个 prepare 工具的网页确认卡片：显示已准备的批次和姓名，允许员工修改原因，并在点击后写入。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document` 和 `prepare_reject_document` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。prepare 结果不含姓名；读取工具结果可以包含申请人的名和姓。写入令牌、浏览器加载的姓名和写入结果不会提供给模型。
+`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document`、`prepare_reject_document`、`prepare_enroll` 和 `prepare_send_offer` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。prepare 结果不含姓名；读取工具结果可以包含申请人的名和姓。写入令牌、浏览器加载的姓名和写入结果不会提供给模型。
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject`、`..._prepare_request_documents`、`..._prepare_cancel`、`..._prepare_verify_document` 和 `..._prepare_reject_document`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
+| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject`、`..._prepare_request_documents`、`..._prepare_cancel`、`..._prepare_verify_document`、`..._prepare_reject_document`、`..._prepare_enroll` 和 `..._prepare_send_offer`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
 | `toolsPath` | `/tools/pending` | 反向代理转发到工具服务待处理批次路由的页面路径。 |
 | `apiPath` | `/api/v1` | 反向代理转发到 Django API 的页面路径。 |
 | `signInUrl` | `/login` | 使用账号、密码和双因素认证登录员工的页面。在新标签页中打开。 |
@@ -50,6 +50,8 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 取消申请、核验材料和拒收材料会多显示一行警告：取消申请无法撤销，且不会通知申请人；核验或拒收材料会通过电子邮件通知申请人，拒收时原因会按原文发送，申请状态可能变为“需补交材料”。材料批次中的编号是材料编号，每行显示姓名、编号、材料类型和状态变更（例如“Pending review → Verified”），数据来自仅限员工的材料摘要调用。申请人上传文件和官方文件均提供“下载”链接；支持预览的文件还提供“查看”链接。姓名为空或看起来像电子邮件地址时，显示为破折号。
 
 确认按以下顺序执行：检查登录状态并铸造写入令牌，使用掉该批次，然后一次写入一条记录。每条记录都有自己的结果（已变更，或 Django 拒绝的原因）。取消会使用掉该批次但不写入。已过期、已使用或无法加载的批次会安静地说明情况，并显示每位申请人的当前状态；只有当所有记录都达到所请求的状态时，才会说明这一状态。真正的失败（未登录、无权限或系统无响应）会显示一个小的警告标记，并以警示（alert）形式播报给辅助技术；已关闭或已取消的请求则保持安静，不播报。
+
+手动注册和发送录取通知书每次只接受一份申请，并要求员工重新输入完全一致的申请编号。注册还需要仅供员工查看的原因，并警告无需付款、将创建学号和学期账单。发送录取通知书会警告申请人将收到电子邮件；不会将申请状态显示为变更至“已发送”。重新输入的编号仅保存在浏览器内存 store 中，只通过令牌请求和 Django 写入请求正文发送，不会写入对话日志。
 
 ### 申请列表卡片
 
@@ -104,7 +106,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 
 #### What the model sees
 
-六个 prepare 工具的结果由工具服务写入，并以普通工具输出的形式到达模型：`pendingActionId`、带状态的 `eligible` 和 `skipped` 记录编号，以及 `expiresAt`；这些结果不含姓名或申请人的自由文本。读取工具的结果可以包含申请人的名和姓。确认、写入令牌、浏览器加载的姓名以及每次写入的结果都保留在浏览器和 Django 中，因此模型只有在之后调用读取工具时，才能得知员工是否确认。
+八个 prepare 工具的结果由工具服务写入，并以普通工具输出的形式到达模型：`pendingActionId`、带状态的 `eligible` 和 `skipped` 记录编号，以及 `expiresAt`；这些结果不含姓名或申请人的自由文本。读取工具的结果可以包含申请人的名和姓。确认、写入令牌、浏览器加载的姓名以及每次写入的结果都保留在浏览器和 Django 中，因此模型只有在之后调用读取工具时，才能得知员工是否确认。
 
 #### Token effect
 
@@ -124,7 +126,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 - **登录是一个链接**：卡片不承载登录表单。它在新标签页中打开 `signInUrl`，员工返回卡片后选择重试。
 - **仅限同源**：卡片依赖员工的会话 Cookie 和反向代理；没有跨源模式。
 - **工具服务在内存中保存批次 15 分钟**：工具服务重启后，卡片会报告批次已过期，模型必须重新准备。
-- **浏览器重放不执行写入**：无需密钥的 `staff-cards` 场景通过真实 Web 组合和模拟员工 API 覆盖内联读取及准备操作卡片，但不确认后端写入。
+- **浏览器写入使用模拟接口**：无需密钥的 Web 重放覆盖卡片堆叠，以及注册和发送录取通知书时的精确编号确认，包括请求正文及输入编号和令牌不进入 Session 日志的检查。它不验证真实 Django 写入或邮件投递。
 
 <a id="dev-note"></a>
 ### Dev Note

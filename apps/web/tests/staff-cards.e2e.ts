@@ -51,7 +51,6 @@ describe('web e2e: staff cards', () => {
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.locator('[role="treeitem"]').first().click()
     await page.locator('[role="treeitem"]').nth(1).click()
-    await page.locator('[data-tool="ai-applications"]').waitFor()
     await page.locator('[data-tool="ai-confirm"][data-state="ready"]').waitFor()
   }, 120_000)
 
@@ -59,23 +58,23 @@ describe('web e2e: staff cards', () => {
     try { await browser?.close() } finally { await scaffold?.close() }
   })
 
-  it('keeps the lookup and preparation cards visible when the process is collapsed and reopened', async () => {
+  it('keeps the preparation card visible and hides the covered lookup when the process is reopened', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-staff-cards'))
     const process = page.locator('[data-turn-process]').first()
     expect(await process.getAttribute('aria-expanded')).toBe('false')
     const cards = page.locator('[data-tool="ai-applications"], [data-tool="ai-confirm"]')
-    expect(await cards.count()).toBe(2)
-    for (const card of await cards.all()) expect(await card.isVisible()).toBe(true)
-    expect(await cards.nth(0).innerText()).toContain('APP-2048')
-    expect(await cards.nth(0).innerText()).toContain('Ada Lovelace')
-    expect(await cards.nth(1).innerText()).toContain('Cancel 1 application')
+    await expect.poll(() => cards.count()).toBe(1)
+    expect(await cards.first().isVisible()).toBe(true)
+    expect(await cards.first().innerText()).toContain('APP-2048')
+    expect(await cards.first().innerText()).toContain('Ada Lovelace')
+    expect(await cards.first().innerText()).toContain('Cancel 1 application')
     await process.click()
     expect(await process.getAttribute('aria-expanded')).toBe('true')
-    expect(await cards.count()).toBe(2)
+    expect(await cards.count()).toBe(1)
     await process.click()
     expect(await process.getAttribute('aria-expanded')).toBe('false')
-    expect(await cards.count()).toBe(2)
-    for (const card of await cards.all()) expect(await card.isVisible()).toBe(true)
+    expect(await cards.count()).toBe(1)
+    expect(await cards.first().isVisible()).toBe(true)
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'ui.expected.md'),
       await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.v4.jsonl', 'ui.expected.md'])
