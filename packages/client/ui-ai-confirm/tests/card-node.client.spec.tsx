@@ -2,10 +2,19 @@
 /** Visible card disclosure keeps the card mounted and never repeats a pending action. */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ApplicationFormApi } from '../src/client/application-form-api.ts'
 import { CardNode } from '../src/client/CardNode.tsx'
+import type { OfferFormApi } from '../src/client/offer-form-api.ts'
 import { batchText, fakeApi, newStore, props, REJECT, settle } from './fixtures.tsx'
 
 afterEach(cleanup)
+
+const formApis = {
+  applicationApi: {
+    catalog: vi.fn(), creationAvailable: vi.fn(), target: vi.fn(), create: vi.fn(), upload: vi.fn(), reconcile: vi.fn(),
+  } satisfies ApplicationFormApi,
+  offerApi: { load: vi.fn(), save: vi.fn(), previewUrl: vi.fn() } satisfies OfferFormApi,
+}
 
 function view(
   store: ReturnType<typeof newStore>, api: ReturnType<typeof fakeApi>['api'],
@@ -13,7 +22,7 @@ function view(
 ) {
   const { callId, toolName, phase, text, isError, ...shared } = props({ store, api, ...overrides })
   return {
-    ...shared, serverName: 'cinhed',
+    ...shared, ...formApis, serverName: 'cinhed',
     node: {
       key: 'card-1', id: callId, kind: 'ai-confirm-card' as const, target: 'chat' as const,
       anchorSeq: 2, location: { kind: 'unresolved' as const }, groupTree: 'turn' as const,
@@ -26,13 +35,17 @@ function view(
 function turnView(
   store: ReturnType<typeof newStore>, api: ReturnType<typeof fakeApi>['api'],
   overrides: Partial<Parameters<typeof props>[0]> & {
-    callId: string; toolName: string; seq: number; applicationIds: readonly number[]; loaded: boolean
+    callId: string
+    toolName: string
+    seq: number
+    applicationIds: readonly number[]
+    loaded: boolean
   },
 ) {
   const { callId, toolName, seq, applicationIds, loaded, ...rest } = overrides
-  const { callId: _c, toolName: _t, phase, text, isError, ...shared } = props({ store, api, ...rest })
+  const { callId: _c, toolName: _t, phase: _phase, text, isError: _isError, ...shared } = props({ store, api, ...rest })
   return {
-    ...shared, serverName: 'cinhed',
+    ...shared, ...formApis, serverName: 'cinhed',
     node: {
       key: `card-${callId}`, id: callId, kind: 'ai-confirm-card' as const, target: 'chat' as const,
       anchorSeq: seq, location: { kind: 'step', turn: { turn: 1 }, step: { step: 1 } } as never,

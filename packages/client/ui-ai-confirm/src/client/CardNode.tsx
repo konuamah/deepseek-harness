@@ -5,16 +5,26 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { ApplicationsCard, type ApplicationsCardProps } from './ApplicationsCard.tsx'
 import { ConfirmCard } from './ConfirmCard.tsx'
 import type { CardData } from './card-definition.ts'
-import type { TurnCard } from './confirm-store.ts'
-import { ACTIONS, parseApplications, wireName } from './model.ts'
+import { EMPTY_FORM, type TurnCard } from './confirm-store.ts'
+import type { ApplicationFormApi } from './application-form-api.ts'
+import type { OfferFormApi } from './offer-form-api.ts'
+import { ACTIONS, parseApplications, parseFormMarker, wireName } from './model.ts'
+import { PrivateForm } from './PrivateForm.tsx'
 import css from './ApplicationsCard.module.css'
 
 type CardNodeProps = Pick<PropsRuntime<'conversation.chat.node', 'ai-confirm-card'>, 'node'>
   & Omit<ApplicationsCardProps, keyof CardData>
-  & { readonly serverName: string }
+  & {
+    readonly serverName: string
+    readonly applicationApi: ApplicationFormApi
+    readonly offerApi: OfferFormApi
+  }
 
 /** Whether a later loaded card in the same turn shows every application this card shows. */
-function superseded(turnCards: readonly TurnCard[] | undefined, card: { readonly callId: string; readonly seq: number; readonly applicationIds: readonly number[] }): boolean {
+function superseded(
+  turnCards: readonly TurnCard[] | undefined,
+  card: { readonly callId: string; readonly seq: number; readonly applicationIds: readonly number[] },
+): boolean {
   return turnCards !== undefined && card.applicationIds.length > 0
     && turnCards.some(other =>
       other.callId !== card.callId && other.seq > card.seq && other.loaded
@@ -40,10 +50,13 @@ function readFacts(data: CardData): { readonly isRead: boolean; readonly loaded:
  * @param props - Chat node and injected card services.
  * @returns A collapsible application or confirmation card.
  */
-export function CardNode({ node, serverName, ...props }: CardNodeProps) {
+export function CardNode({ node, serverName, applicationApi, offerApi, ...props }: CardNodeProps) {
   const contentId = useId()
   const data = node.data
   const collapsed = props.useStore(state => state.collapsed[data.callId] ?? false)
+  const form = data.phase === 'result' && !data.isError ? parseFormMarker(data.toolName, data.text) : null
+  const formState = props.useStore(state => state.forms[data.callId] ?? EMPTY_FORM)
+  const locks = props.useStore(state => state.locks)
   const spec = ACTIONS.find(action => wireName(serverName, action) === data.toolName)
 
   const turn = turnOf(node.location)
@@ -60,7 +73,8 @@ export function CardNode({ node, serverName, ...props }: CardNodeProps) {
     && superseded(turns[turn], { callId: data.callId, seq: node.anchorSeq, applicationIds: data.applicationIds })
   if (hidden) return null
 
-  if (spec === undefined && (data.phase !== 'result' || data.isError || parseApplications(data.text) === null)) return null
+  if (spec === undefined && form === null
+    && (data.phase !== 'result' || data.isError || parseApplications(data.text) === null)) return null
   return (
     <div className={css.disclosure}>
       <Button
@@ -76,9 +90,12 @@ export function CardNode({ node, serverName, ...props }: CardNodeProps) {
         {collapsed ? <IconChevronDownOutlineRegular /> : <IconChevronUpOutlineRegular />}
       </Button>
       <div id={contentId} hidden={collapsed}>
-        {spec === undefined
-          ? <ApplicationsCard {...props} {...data} />
-          : <ConfirmCard {...props} {...data} spec={spec} />}
+        {spec !== undefined
+          ? <ConfirmCard {...props} {...data} spec={spec} />
+          : form !== null
+            ? <PrivateForm {...props} form={form} callId={data.callId} state={formState} locks={locks}
+              applicationApi={applicationApi} offerApi={offerApi} />
+            : <ApplicationsCard {...props} {...data} />}
       </div>
     </div>
   )

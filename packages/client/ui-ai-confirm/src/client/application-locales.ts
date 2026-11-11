@@ -1,0 +1,56 @@
+/** Typed labels for the applicant-entered application form. */
+export const applicationZh = {
+  'section.identity': '身份信息',
+  'section.contact': '联系方式',
+  'section.education': '教育背景',
+  'form.field.first_name': '名',
+  'form.field.last_name': '姓',
+  'form.field.other_names': '其他姓名',
+  'form.field.date_of_birth': '出生日期',
+  'form.field.place_of_birth': '出生地点',
+  'form.field.passport_or_national_id_number': '护照或身份证号码',
+  'form.field.gender': '性别',
+  'form.field.title': '称谓',
+  'form.field.email': '电子邮箱',
+  'form.field.phone_number': '电话号码',
+  'form.field.nationality': '国籍',
+  'form.field.address': '地址',
+  'form.field.city': '城市',
+  'form.field.country': '国家',
+  'form.field.postal_code': '邮政编码',
+  'form.field.highest_qualification': '最高学历',
+  'form.field.institution_attended': '就读院校',
+  'form.field.year_completed': '毕业年份',
+  'form.field.grade_or_result': '成绩或结果',
+  'form.field.agent_code': '代理代码',
+} as const
+
+/** Key type for the applicant-form locale callback. */
+export type ApplicationFieldKey = keyof typeof applicationZh
+
+/** Complete English labels for applicant-entered application fields. */
+export const applicationEn: Record<ApplicationFieldKey, string> = {
+  'section.identity': 'Identity details',
+  'section.contact': 'Contact details',
+  'section.education': 'Education',
+  'form.field.first_name': 'First name',
+  'form.field.last_name': 'Last name',
+  'form.field.other_names': 'Other names',
+  'form.field.date_of_birth': 'Date of birth',
+  'form.field.place_of_birth': 'Place of birth',
+  'form.field.passport_or_national_id_number': 'Passport or national ID number',
+  'form.field.gender': 'Gender',
+  'form.field.title': 'Title',
+  'form.field.email': 'Email address',
+  'form.field.phone_number': 'Phone number',
+  'form.field.nationality': 'Nationality',
+  'form.field.address': 'Address',
+  'form.field.city': 'City',
+  'form.field.country': 'Country',
+  'form.field.postal_code': 'Postal code',
+  'form.field.highest_qualification': 'Highest qualification',
+  'form.field.institution_attended': 'Institution attended',
+  'form.field.year_completed': 'Year completed',
+  'form.field.grade_or_result': 'Grade or result',
+  'form.field.agent_code': 'Agent code',
+}

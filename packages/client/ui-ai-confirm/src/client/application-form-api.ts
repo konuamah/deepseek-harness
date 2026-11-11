@@ -8,6 +8,15 @@ export class ApplicationFormError extends Error {
   }
 }
 
+/**
+ * Classify any thrown form error; an unexpected error is an unavailable read failure.
+ * @param error - the thrown value.
+ * @returns the failure kind the form reports.
+ */
+export function formFailure(error: unknown): 'sign-in' | 'invalid' | 'unavailable' | 'unknown' {
+  return error instanceof ApplicationFormError ? error.kind : 'unavailable'
+}
+
 /** One privately loaded option. */
 export interface FormChoice {
   readonly id: number
@@ -27,7 +36,16 @@ export interface ApplicationCatalog {
   readonly hasMore: boolean
   readonly programs: readonly FormChoice[]
   readonly intakes: readonly FormChoice[]
+  readonly scholarships: readonly FormChoice[]
   readonly documents: readonly DocumentChoice[]
+}
+
+/** Private upload target and the document types already attached to it. */
+export interface UploadTarget {
+  readonly id: number
+  readonly reference: string
+  readonly status: string
+  readonly attachedDocumentTypeIds: readonly number[]
 }
 
 /** Safe fields retained from a staff create response, not a model-facing result. */
@@ -52,6 +70,8 @@ export interface ApplicationFormApi {
   catalog(page: number): Promise<ApplicationCatalog>
   /** Whether identity entry is supported; secure-vault mode remains unavailable. */
   creationAvailable(): Promise<boolean>
+  /** Load the upload target and the document types already attached to it. */
+  target(applicationId: number): Promise<UploadTarget>
   /** Submit once. A network/server/unreadable-success failure is unknown, never safe to retry. */
   create(body: FormData): Promise<CreatedApplication>
   /** Attach once. Unknown failures must not trigger an automatic resubmission. */
@@ -131,9 +151,30 @@ export function createApplicationFormApi(options: { readonly fetch: typeof fetch
       if (!isRecord(value) || value.page !== page || typeof value.has_more !== 'boolean') throw new ApplicationFormError('unavailable')
       return {
         page, hasMore: value.has_more,
-        programs: boundedChoices(value.programs, choice), intakes: boundedChoices(value.intakes, choice),
+        programs: boundedChoices(value.programs, choice),
+        intakes: boundedChoices(value.intakes, choice),
+        scholarships: boundedChoices(value.scholarships, choice),
         documents: boundedChoices(value.document_types, documentChoice),
       }
+    },
+    async target(applicationId) {
+      if (!isId(applicationId)) throw new ApplicationFormError('invalid')
+      const [summary, documents] = await Promise.all([
+        json(await request(path(`admissions/applications/${applicationId}/`), { method: 'GET' })),
+        json(await request(path(`admissions/staff/applications/${applicationId}/documents/`), { method: 'GET' })),
+      ])
+      if (!isRecord(summary) || !isRecord(documents) || !Array.isArray(documents.documents)
+        || documents.documents.length > 100) throw new ApplicationFormError('unavailable')
+      const parsed = application({ ...summary, reference: summary.application_id })
+      const attached = new Set<number>()
+      for (const row of documents.documents) {
+        if (!isRecord(row) || typeof row.kind !== 'string') throw new ApplicationFormError('unavailable')
+        if (row.kind === 'uploaded') {
+          if (!isId(row.document_type_id)) throw new ApplicationFormError('unavailable')
+          attached.add(row.document_type_id)
+        }
+      }
+      return { ...parsed, attachedDocumentTypeIds: [...attached] }
     },
     async creationAvailable() {
       const value = await json(await request(path('admissions/applications/public-config/'), { method: 'GET' }))

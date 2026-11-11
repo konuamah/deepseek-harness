@@ -19,12 +19,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { createApplicationFormApi } from './application-form-api.ts'
 import { createConfirmApi } from './api.ts'
 import { createConfirmStore } from './confirm-store.ts'
 import { CardNode } from './CardNode.tsx'
 import { createCardDefinition } from './card-definition.ts'
 import { en, NS, zh, type AiConfirmKey } from './locales.ts'
-import { ACTIONS, READ_TOOLS, readWireName, wireName } from './model.ts'
+import { ACTIONS, FORM_TOOLS, READ_TOOLS, formWireName, readWireName, wireName } from './model.ts'
+import { createOfferFormApi } from './offer-form-api.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -74,14 +76,23 @@ export function apply(ctx: ClientContext, config: Config = Config({})): void {
     toolsPath: config.toolsPath,
     apiPath: config.apiPath,
   })
+  const applicationApi = createApplicationFormApi({
+    fetch: (input, init) => globalThis.fetch(input, init), apiPath: config.apiPath,
+  })
+  const offerApi = createOfferFormApi({
+    fetch: (input, init) => globalThis.fetch(input, init), apiPath: config.apiPath,
+  })
   const toolNames = [
     ...ACTIONS.map(spec => wireName(config.serverName, spec)),
     ...READ_TOOLS.map(tool => readWireName(config.serverName, tool)),
+    ...FORM_TOOLS.map(tool => formWireName(config.serverName, tool)),
   ]
   ctx.effect(() => ctx.uiConversation.events.register(createCardDefinition(toolNames)))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'ai-confirm-card', locale: NS, store,
-    inject: () => ({ api, serverName: config.serverName, signInUrl: config.signInUrl }),
+    inject: () => ({
+      api, serverName: config.serverName, signInUrl: config.signInUrl, applicationApi, offerApi,
+    }),
   }, CardNode))
   for (const key of toolNames) {
     ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(

@@ -1,5 +1,5 @@
 ---
-description: "Web confirm card for the eight prepare tools of the CInHEd tool service: shows a prepared batch with names, lets staff edit the reason, and writes after a click."
+description: "Web confirm card and private forms for the CInHEd tool service: shows a prepared batch with names, writes after a click, and renders application create/upload and draft-offer forms."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, `prepare_reject_document`, `prepare_enroll`, and `prepare_send_offer` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible.
+`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, `prepare_reject_document`, `prepare_enroll`, and `prepare_send_offer` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible. It also renders the tool service's `open_application_form` and `open_offer_form` markers as private forms: staff enter applicant details, choose programs, intakes and documents, or edit a draft offer. Form values and files go directly to Django with the staff session; they never enter chat or the model.
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ The row ships `disabled: true` in the Web bundle. Turn it on in the profile patc
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, `..._prepare_request_documents`, `..._prepare_cancel`, `..._prepare_verify_document`, `..._prepare_reject_document`, `..._prepare_enroll`, and `..._prepare_send_offer`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`. |
+| `serverName` | `cinhed` | `serverName` of the MCP entry for the tool service. The cards register as `mcp__<serverName>__prepare_approve`, `..._prepare_reject`, `..._prepare_request_documents`, `..._prepare_cancel`, `..._prepare_verify_document`, `..._prepare_reject_document`, `..._prepare_enroll`, and `..._prepare_send_offer`. Two read-only cards register as `mcp__<serverName>__list_applications` and `mcp__<serverName>__get_application`; two private-form markers register as `mcp__<serverName>__open_application_form` and `mcp__<serverName>__open_offer_form`. |
 | `toolsPath` | `/tools/pending` | Page path a reverse proxy forwards to the tool service's pending-batch routes. |
 | `apiPath` | `/api/v1` | Page path a reverse proxy forwards to Django's API. |
 | `signInUrl` | `/login` | Page that signs staff in with login and 2FA. Opened in a new tab. |
@@ -58,6 +58,14 @@ Manual enrolment and offer sending accept one application at a time and require 
 The results of `list_applications` and `get_application` show as a compact table with Name, Reference, Status, and Program. The AI tool result may include first and last names, and the browser independently loads names from the staff-only application-summaries call under `apiPath`, using the staff member's own session. Only a single-result `get_application` card also lists uploaded and official files from the staff-only application documents call; it labels uploaded status and unreleased official files. View opens a native preview in a new tab when supported, and Download is a separate link. File metadata remains in the browser-only store. The card reads only each record's id and name from the summaries reply, asks once per call (for at most 25 ids), and keeps names in the card's in-memory store only. A name that looks like an email address is not shown.
 
 The card fails soft. While names load, the rows show without them. If names cannot be loaded (signed out, expired, unavailable), the table keeps its reference, status, and program and adds one line saying so, with a Try again button. A result that is not a well-formed list of applications, or an error, renders nothing.
+
+### Private forms
+
+`open_application_form` opens a create form when the marker's application id is null, and an upload form for an existing application. The form loads programs, intakes, scholarships and document types page by page from Django, never from the model. Create posts the applicant fields, the chosen program and intake, explicit terms acceptance, and any selected files as `document_<id>` fields. Upload shows the target reference and status, labels types already attached, and posts only the new files. A duplicate create is reported as an existing application: nothing was changed and the selected files were not attached.
+
+`open_offer_form` opens the draft-offer form for one approved application. It loads the existing draft and the scholarship choices privately, shows the eight fee fields and the offer details, keeps money as decimal strings, and shows server-computed totals after a save. A missing draft is created only when staff click Save; blank new fields are omitted so Django applies its defaults. Saving creates or updates the draft only. It does not generate a PDF or send email. A saved draft can be previewed inline in a new tab; the preview action stays hidden while entries are unsaved or a save is unsettled, because it shows the saved draft.
+
+Forms keep values in the declared Session store and files in the component. The first click sets a target lock before awaiting, so a second card for the same target cannot start another write. An unknown create, upload or save outcome keeps the entries and the lock, and nothing retries automatically; application reconciliation and a later offer load are inspection only. The browser unload warning covers a dirty form, and Cancel asks before discarding. A full reload loses values and files; it is not recovery.
 
 ### Proxy requirements
 
@@ -127,6 +135,9 @@ None. The package never edits earlier request tokens.
 - **Same origin only** — the card relies on the staff session cookie and a reverse proxy; there is no cross-origin mode.
 - **The tool service keeps batches in memory for 15 minutes** — a tool service restart makes the card report an expired batch, and the model must prepare it again.
 - **Browser writes are mocked** — keyless Web replay covers card stacking and exact-reference confirmation for enrolment and offer sending, including request payloads and exclusion of typed references and tokens from the Session log. It does not verify real Django writes or email delivery.
+- **Form drafts are browser-only** — values and files are not persisted. A full reload loses them, and reload is not recovery. No supported in-app navigation veto exists yet, so only the explicit Cancel prompt and the browser unload warning cover discard.
+- **Form writes are one attempt** — an unknown create, upload or save outcome stays locked. The form shows a candidate or the current saved values for inspection but does not prove the original request failed and never retries.
+- **Saving an offer is not sending it** — the draft form never generates a PDF or sends mail. Sending remains the separate exact-reference confirm flow.
 
 <a id="dev-note"></a>
 ### Dev Note

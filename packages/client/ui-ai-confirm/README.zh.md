@@ -1,5 +1,5 @@
 ---
-description: "CInHEd 工具服务八个 prepare 工具的网页确认卡片：显示已准备的批次和姓名，允许员工修改原因，并在点击后写入。"
+description: "CInHEd 工具服务的网页确认卡片和私有表单：显示已准备的批次和姓名，点击后写入，并渲染新建/上传材料和录取通知草稿表单。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document`、`prepare_reject_document`、`prepare_enroll` 和 `prepare_send_offer` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。prepare 结果不含姓名；读取工具结果可以包含申请人的名和姓。写入令牌、浏览器加载的姓名和写入结果不会提供给模型。
+`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document`、`prepare_reject_document`、`prepare_enroll` 和 `prepare_send_offer` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。prepare 结果不含姓名；读取工具结果可以包含申请人的名和姓。写入令牌、浏览器加载的姓名和写入结果不会提供给模型。它还会把工具服务的 `open_application_form` 和 `open_offer_form` 标记渲染为私有表单：员工填写申请人信息、选择专业、入学批次和材料，或编辑录取通知草稿。表单值和文件直接通过员工会话发送给 Django，绝不进入对话或模型。
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject`、`..._prepare_request_documents`、`..._prepare_cancel`、`..._prepare_verify_document`、`..._prepare_reject_document`、`..._prepare_enroll` 和 `..._prepare_send_offer`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`。 |
+| `serverName` | `cinhed` | 工具服务 MCP 条目的 `serverName`。卡片注册为 `mcp__<serverName>__prepare_approve`、`..._prepare_reject`、`..._prepare_request_documents`、`..._prepare_cancel`、`..._prepare_verify_document`、`..._prepare_reject_document`、`..._prepare_enroll` 和 `..._prepare_send_offer`。两张只读卡片注册为 `mcp__<serverName>__list_applications` 和 `mcp__<serverName>__get_application`；两个私有表单标记注册为 `mcp__<serverName>__open_application_form` 和 `mcp__<serverName>__open_offer_form`。 |
 | `toolsPath` | `/tools/pending` | 反向代理转发到工具服务待处理批次路由的页面路径。 |
 | `apiPath` | `/api/v1` | 反向代理转发到 Django API 的页面路径。 |
 | `signInUrl` | `/login` | 使用账号、密码和双因素认证登录员工的页面。在新标签页中打开。 |
@@ -58,6 +58,14 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 `list_applications` 和 `get_application` 的结果会显示为紧凑的表格，包含姓名、编号、状态和专业。AI 工具结果可以包含申请人的名和姓；浏览器也会独立使用员工本人的会话，从 `apiPath` 下仅限员工使用的申请摘要接口加载姓名。只有单条结果的 `get_application` 卡片还会从仅限员工使用的申请文件接口列出申请人上传文件和官方文件，并标记上传文件状态及尚未发布的官方文件。支持预览的文件会在新标签页中打开原生预览，下载使用单独的链接。文件元数据只保留在浏览器 store 中。卡片只读取摘要响应中每条记录的 id 和姓名，每次调用只请求一次（最多 25 个 id），姓名只保存在卡片的内存 store 中。看起来像电子邮件地址的姓名不会显示。
 
 卡片会柔性降级。姓名加载期间，各行不带姓名显示。如果无法加载姓名（未登录、已过期、不可用），表格仍保留编号、状态和专业，并增加一行提示，附带"重试"按钮。结果不是格式正确的申请列表，或为错误时，不渲染任何内容。
+
+### 私有表单
+
+`open_application_form` 在标记的申请 ID 为空时打新建表单，否则打材料上传表单。表单从 Django 分页加载专业、入学批次、奖学金和材料类型，绝不从模型加载。新建提交申请人字段、所选专业和批次、明确的条款接受以及以 `document_<id>` 命名的文件。上传显示目标编号和状态，标注已附材料类型，只提交新文件。重复创建会报告为已存在的申请：未做任何更改，所选文件也未附上。
+
+`open_offer_form` 为一份已批准申请打录取通知草稿表单。它私下加载已有草稿和奖学金选项，显示八个费用字段和通知详情，金额保持十进制字符串，保存后显示服务器计算的总计。缺少草稿时只有员工点击保存才创建；新建时空白字段会被省略，以便 Django 使用默认值。保存只创建或更新草稿，不生成 PDF，也不发送邮件。已保存的草稿可以在新标签页中内联预览；当内容未保存或保存结果未确定时，预览操作会隐藏，因为预览显示的是已保存的草稿。
+
+表单值保存在声明的 Session store 中，文件保存在组件中。第一次点击会在等待前设置目标锁，因此同一目标的第二张卡片无法开始另一次写入。未知的新建、上传或保存结果会保留内容和锁，绝不自动重试；申请核对和之后的录取通知加载仅供检查。浏览器卸载警告覆盖未保存的表单，取消会在丢弃前询问。完整刷新会丢失值和文件，刷新不是恢复。
 
 ### 代理要求
 
@@ -125,6 +133,9 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 - **结果不在 Session 日志中**：重新加载后显示的是每位申请人的当前状态，而不是此卡片的哪些写入成功。
 - **登录是一个链接**：卡片不承载登录表单。它在新标签页中打开 `signInUrl`，员工返回卡片后选择重试。
 - **仅限同源**：卡片依赖员工的会话 Cookie 和反向代理；没有跨源模式。
+- **表单草稿只在浏览器中**：值和文件不持久化。完整刷新会丢失它们，刷新不是恢复。尚无受支持的应用内导航拦截，因此只有明确的取消提示和浏览器卸载警告覆盖丢弃。
+- **表单写入只尝试一次**：未知的新建、上传或保存结果会保持锁定。表单会显示候选记录或当前已保存值供检查，但不能证明原请求失败，且绝不重试。
+- **保存录取通知不是发送**：草稿表单不生成 PDF，也不发送邮件。发送仍是单独的精确编号确认流程。
 - **工具服务在内存中保存批次 15 分钟**：工具服务重启后，卡片会报告批次已过期，模型必须重新准备。
 - **浏览器写入使用模拟接口**：无需密钥的 Web 重放覆盖卡片堆叠，以及注册和发送录取通知书时的精确编号确认，包括请求正文及输入编号和令牌不进入 Session 日志的检查。它不验证真实 Django 写入或邮件投递。
 

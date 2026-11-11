@@ -167,6 +167,56 @@ export function parsePrepared(text: string): PreparedBatch | null {
 /** The tools whose results list applications; the read cards register for these. */
 export const READ_TOOLS = ['list_applications', 'get_application'] as const
 
+/** Form tools whose validated markers open a private browser form. */
+export const FORM_TOOLS = ['open_application_form', 'open_offer_form'] as const
+
+/** A tool that opens a private form instead of listing applications. */
+export type FormTool = (typeof FORM_TOOLS)[number]
+
+/**
+ * A validated form marker. The tool returns identifiers only; values and files are entered only in the form.
+ */
+export type FormMarker =
+  | { readonly form: 'application'; readonly applicationId: null }
+  | { readonly form: 'application'; readonly applicationId: number }
+  | { readonly form: 'offer'; readonly applicationId: number }
+
+/**
+ * The wire name of a form tool.
+ * @param serverName - the `serverName` of the MCP entry that connects the tool service.
+ * @param tool - the form tool.
+ * @returns the key to register the card under.
+ */
+export function formWireName(serverName: string, tool: FormTool): string {
+  return `mcp__${serverName}__${tool}`
+}
+
+/**
+ * Read a validated form marker from a form tool's result. Malformed markers open nothing.
+ * @param toolName - the wire tool name.
+ * @param text - the tool result's text content.
+ * @returns the marker, or null when the result is not a well-formed marker.
+ */
+export function parseFormMarker(toolName: string, text: string): FormMarker | null {
+  const name = toolName.split('__').at(-1)
+  if (name !== 'open_application_form' && name !== 'open_offer_form') return null
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!isRecord(value)) return null
+  if (name === 'open_offer_form') {
+    return value.form === 'offer' && isId(value.applicationId)
+      ? { form: 'offer', applicationId: value.applicationId }
+      : null
+  }
+  if (value.form !== 'application') return null
+  if (value.applicationId === null) return { form: 'application', applicationId: null }
+  return isId(value.applicationId) ? { form: 'application', applicationId: value.applicationId } : null
+}
+
 /**
  * The wire name of a read tool: `mcp__<serverName>__<tool>`.
  * @param serverName - the `serverName` of the MCP entry that connects the tool service.
@@ -235,6 +285,9 @@ export function shownApplicationIds(toolName: string, args: string | undefined, 
     return []
   }
   if (!isRecord(value)) return []
+  if (name === 'open_offer_form' || name === 'open_application_form') {
+    return isId(value.applicationId) ? [value.applicationId] : []
+  }
   if (isId(value.id)) return [value.id]
   if (Array.isArray(value.ids)) return value.ids.filter(isId)
   if (Array.isArray(value.documents)) {

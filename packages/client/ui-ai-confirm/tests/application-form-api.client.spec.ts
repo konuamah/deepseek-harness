@@ -5,7 +5,8 @@ import { ApplicationFormError, createApplicationFormApi } from '../src/client/ap
 function scripted(replies: (Response | Error)[]) {
   const calls: { url: string; init: RequestInit | undefined }[] = []
   const fake: typeof fetch = async (url, init) => {
-    calls.push({ url: String(url), init })
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    calls.push({ url: address, init })
     const reply = replies.shift()
     if (reply === undefined) throw new Error('unscripted request')
     if (reply instanceof Error) throw reply
@@ -21,6 +22,7 @@ const catalog = {
   page: 1, has_more: false,
   programs: [{ id: 2, name: 'Nursing', code: 'NUR' }],
   intakes: [{ id: 3, name: 'Autumn' }],
+  scholarships: [{ id: 5, name: 'Merit' }],
   document_types: [{ id: 4, name: 'Transcript', is_required: true, accepted_formats: 'pdf,png', max_size_mb: 5 }],
 }
 
@@ -36,6 +38,7 @@ describe('private application catalog', () => {
     const { api, calls } = scripted([json(catalog)])
     expect(await api.catalog(1)).toEqual({
       page: 1, hasMore: false, programs: [{ id: 2, name: 'Nursing' }], intakes: [{ id: 3, name: 'Autumn' }],
+      scholarships: [{ id: 5, name: 'Merit' }],
       documents: [{ id: 4, name: 'Transcript', isRequired: true, acceptedFormats: 'pdf,png', maxSizeMb: 5 }],
     })
     expect(calls[0]).toMatchObject({ url: '/api/v1/admissions/staff/application-catalog/?page=1', init: {
@@ -53,7 +56,10 @@ describe('private application catalog', () => {
     const { api } = scripted([json({ ...catalog, page: 1000, has_more: true,
       programs: Array.from({ length: 50 }, (_, i) => ({ id: i + 1, name: 'Program' })),
     })])
-    expect(await api.catalog(1000)).toMatchObject({ page: 1000, hasMore: true, programs: expect.any(Array) })
+    const result = await api.catalog(1000)
+    expect(result.page).toBe(1000)
+    expect(result.hasMore).toBe(true)
+    expect(result.programs).toHaveLength(50)
   })
 
   it.each([
@@ -164,7 +170,7 @@ describe('private inspection after an uncertain request', () => {
     expect(calls).toHaveLength(2)
   })
 
-  it.each([[], [0], Array(26).fill(4)])('validates candidate document IDs %#', async (ids) => {
+  it.each([{ ids: [] }, { ids: [0] }, { ids: Array(26).fill(4) }])('validates candidate document IDs %#', async ({ ids }) => {
     const { api } = scripted([csrf(), json({ application: { id: 7, reference: 'APP-7', status: 'PENDING', document_type_ids: ids } })])
     if (ids.length === 0) expect(await api.reconcile('synthetic@example.test', 2)).toMatchObject({ documentTypeIds: [] })
     else expect(await kind(api.reconcile('synthetic@example.test', 2))).toBe('unavailable')

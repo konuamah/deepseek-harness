@@ -6,6 +6,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { ApplicationFile, FailureKind, PendingView, RecordOutcome, Summary } from './api.ts'
+import type { OfferScholarship } from './offer-form-api.ts'
 
 /** Where a batch is in its flow. A failure kind is a stop the card explains. */
 export type CardPhase = 'loading' | 'ready' | 'confirming' | 'done' | 'cancelled' | FailureKind
@@ -49,11 +50,62 @@ export interface TurnCard {
   readonly loaded: boolean
 }
 
+/** A form write failure. Only `invalid` may be corrected and retried; `unknown` stays locked. */
+export type FormFailure = 'sign-in' | 'invalid' | 'unavailable' | 'unknown'
+
+/** Where a private form is in its flow. */
+export type FormPhase = 'idle' | 'loading' | 'ready' | 'saving' | 'saved' | 'failed'
+
+/** Server-computed offer totals, shown after a save. */
+export interface FormTotals {
+  readonly totalFees: string
+  readonly totalScholarships: string
+  readonly netFeePayable: string
+}
+
+/** One private form's browser-memory state, keyed by the tool call id. Files stay with the component. */
+export interface FormState {
+  readonly phase: FormPhase
+  readonly error: FormFailure | null
+  readonly locked: boolean
+  readonly values: Readonly<Record<string, string>>
+  readonly terms: boolean
+  readonly selectedDocuments: readonly number[]
+  readonly scholarships: readonly OfferScholarship[]
+  readonly reference: string | null
+  readonly createdNew: boolean | null
+  readonly totals: FormTotals | null
+}
+
+/** A form that has not started loading yet. */
+export const EMPTY_FORM: FormState = {
+  phase: 'idle',
+  error: null,
+  locked: false,
+  values: {},
+  terms: false,
+  selectedDocuments: [],
+  scholarships: [],
+  reference: null,
+  createdNew: null,
+  totals: null,
+}
+
+/** Values a settled write reports back to the form. */
+export interface FormSaved {
+  readonly reference?: string | undefined
+  readonly createdNew?: boolean | undefined
+  readonly totals?: FormTotals | undefined
+}
+
 /** All cards of one Session: batches keyed by pending action id, application lists keyed by call id. */
 export interface ConfirmState {
   cards: Record<string, CardState>
   lists: Record<string, ListState>
   files: Record<string, FilesState>
+  forms: Record<string, FormState>
+  /** Targets with a write in flight or an unresolved outcome; a second form must not write. */
+  locks: Record<string, boolean>
   collapsed: Record<string, boolean>
   /** Staff cards per turn, ordered by event sequence, for hiding a card a later one supersedes. */
   turns: Record<number, readonly TurnCard[]>
@@ -77,10 +129,32 @@ export interface CardSink {
   filesBegin(key: string): void
   filesLoaded(key: string, documents: readonly ApplicationFile[]): void
   filesFailed(key: string, kind: FailureKind): void
+  formBegin(key: string): void
+  formRetry(key: string): void
+  formReady(key: string, values: Readonly<Record<string, string>>, scholarships: readonly OfferScholarship[]): void
+  formReset(key: string, values: Readonly<Record<string, string>>, scholarships: readonly OfferScholarship[]): void
+  formEdit(key: string, name: string, value: string): void
+  formTerms(key: string, terms: boolean): void
+  formDocuments(key: string, ids: readonly number[]): void
+  formScholarships(key: string, scholarships: readonly OfferScholarship[]): void
+  formSaving(key: string): void
+  formSaved(key: string, saved: FormSaved): void
+  formFailed(key: string, kind: FormFailure): void
+  /** Claim a target for one write; the lock stays until a settled non-unknown outcome. */
+  lockTarget(target: string): void
+  unlockTarget(target: string): void
+}
+
+function form(state: ConfirmState, key: string): FormState {
+  return state.forms[key] ?? EMPTY_FORM
+}
+
+function updateForm(state: ConfirmState, key: string, change: Partial<FormState>): void {
+  state.forms[key] = { ...form(state, key), ...change }
 }
 
 type ConfirmActions = {
-  [Name in keyof CardSink]: (state: ConfirmState, ...args: Parameters<CardSink[Name]>) => void
+  [Name in keyof CardSink]: (state: ConfirmState, ...args: Parameters<CardSink[Name]>) => ReturnType<CardSink[Name]>
 } & {
   collapse(state: ConfirmState, key: string, collapsed: boolean): void
   seeCard(state: ConfirmState, turn: number, card: TurnCard): void
@@ -112,7 +186,9 @@ function update(state: ConfirmState, key: string, change: Partial<CardState>): v
  */
 export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmActions> {
   return defineStore({
-    init: (): ConfirmState => ({ cards: {}, lists: {}, files: {}, collapsed: {}, turns: {} }),
+    init: (): ConfirmState => ({
+      cards: {}, lists: {}, files: {}, forms: {}, locks: {}, collapsed: {}, turns: {},
+    }),
     actions: {
       collapse: (state, key, collapsed) => { state.collapsed[key] = collapsed },
       seeCard: (state, turn, card) => {
@@ -176,6 +252,56 @@ export function createConfirmStore(): EngineStoreHandle<ConfirmState, ConfirmAct
       },
       filesFailed: (state, key, kind) => {
         state.files[key] = { phase: kind, documents: [] }
+      },
+      formBegin: (state, key) => {
+        state.forms[key] = { ...form(state, key), phase: 'loading', error: null }
+      },
+      formRetry: (state, key) => {
+        updateForm(state, key, { phase: 'idle', error: null })
+      },
+      formReady: (state, key, values, scholarships) => {
+        const current = form(state, key)
+        updateForm(state, key, {
+          phase: 'ready', error: null, values: { ...current.values, ...values }, scholarships,
+        })
+      },
+      formReset: (state, key, values, scholarships) => {
+        updateForm(state, key, { values, scholarships })
+      },
+      formEdit: (state, key, name, value) => {
+        updateForm(state, key, { values: { ...form(state, key).values, [name]: value } })
+      },
+      formTerms: (state, key, terms) => {
+        updateForm(state, key, { terms })
+      },
+      formDocuments: (state, key, ids) => {
+        updateForm(state, key, { selectedDocuments: ids })
+      },
+      formScholarships: (state, key, scholarships) => {
+        updateForm(state, key, { scholarships })
+      },
+      formSaving: (state, key) => {
+        updateForm(state, key, { phase: 'saving', locked: true, error: null })
+      },
+      formSaved: (state, key, saved) => {
+        updateForm(state, key, {
+          phase: 'saved', locked: false, error: null,
+          reference: saved.reference ?? form(state, key).reference,
+          createdNew: saved.createdNew ?? form(state, key).createdNew,
+          totals: saved.totals ?? form(state, key).totals,
+        })
+      },
+      formFailed: (state, key, kind) => {
+        // An invalid submission may be corrected; every other stop keeps the write blocked.
+        updateForm(state, key, {
+          phase: kind === 'invalid' ? 'ready' : 'failed',
+          error: kind,
+          locked: kind === 'unknown',
+        })
+      },
+      lockTarget: (state, target) => { state.locks[target] = true },
+      unlockTarget: (state, target) => {
+        state.locks = Object.fromEntries(Object.entries(state.locks).filter(([key]) => key !== target))
       },
     },
   })

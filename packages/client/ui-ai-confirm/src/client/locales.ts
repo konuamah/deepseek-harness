@@ -5,11 +5,15 @@
  * translation someone can vouch for.
  */
 
+import { applicationEn, applicationZh } from './application-locales.ts'
+import { formEn, formZh } from './form-locales.ts'
+import { offerEn, offerZh } from './offer-locales.ts'
+
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'aiConfirm'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
-export const zh = {
+const zhBase = {
   'card.show': '显示详情',
   'card.hide': '隐藏详情',
   'title.approve.one': '批准 1 份申请',
@@ -99,11 +103,14 @@ export const zh = {
   'status.verified': '已核验',
 } satisfies Record<string, string>
 
+/** Every dictionary this namespace owns. */
+export const zh = { ...zhBase, ...applicationZh, ...offerZh, ...formZh }
+
 /** The aiConfirm namespace key union. */
 export type AiConfirmKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
-export const en = {
+const enBase = {
   'card.show': 'Show details',
   'card.hide': 'Hide details',
   'title.approve.one': 'Approve 1 application',
@@ -191,4 +198,7 @@ export const en = {
   'status.withdrawn': 'Withdrawn',
   'status.cancelled': 'Cancelled',
   'status.verified': 'Verified',
-} satisfies Record<AiConfirmKey, string>
+} satisfies Record<keyof typeof zhBase, string>
+
+/** English dictionary, checked complete against the merged key set. */
+export const en = { ...enBase, ...applicationEn, ...offerEn, ...formEn } satisfies Record<AiConfirmKey, string>
