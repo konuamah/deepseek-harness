@@ -14,6 +14,8 @@ const SIGN_IN_AGAIN = 'staff-access: sign in again'
 export interface AiTokenProviderOptions {
   /** Django origin, such as `https://django.example`. */
   readonly djangoBaseUrl: string
+  /** Django session cookie name. Defaults to `sessionid`. */
+  readonly cookieName?: string
   readonly fetch?: typeof fetch
   readonly now?: () => number
   /** A cached token is reused only while it stays valid for at least this long. Defaults to 60 000 ms. */
@@ -52,6 +54,7 @@ interface Inflight { readonly promise: Promise<string> }
  */
 export function createAiTokenProvider(options: AiTokenProviderOptions): AiTokenProvider {
   const { djangoBaseUrl, cookieFor, ownerOf } = options
+  const cookieName = options.cookieName ?? 'sessionid'
   const doFetch = options.fetch ?? ((input: string, init: RequestInit) => globalThis.fetch(input, init))
   const now = options.now ?? Date.now
   const refreshMarginMs = options.refreshMarginMs ?? 60_000
@@ -65,7 +68,7 @@ export function createAiTokenProvider(options: AiTokenProviderOptions): AiTokenP
   async function csrf(cookie: string): Promise<{ cookieValue: string; header: string }> {
     const response = await doFetch(`${djangoBaseUrl}/api/v1/users/csrf-token/`, {
       method: 'GET',
-      headers: { Cookie: `sessionid=${cookie}`, Accept: 'application/json' },
+      headers: { Cookie: `${cookieName}=${cookie}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'error',
     })
@@ -85,7 +88,7 @@ export function createAiTokenProvider(options: AiTokenProviderOptions): AiTokenP
       const response = await doFetch(`${djangoBaseUrl}/api/v1/ai/token/`, {
         method: 'POST',
         headers: {
-          Cookie: `sessionid=${cookie}; csrftoken=${cookieValue}`,
+          Cookie: `${cookieName}=${cookie}; csrftoken=${cookieValue}`,
           'X-CSRFToken': header,
           'Content-Type': 'application/json',
           Accept: 'application/json',

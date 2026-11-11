@@ -19,11 +19,11 @@ interface Call {
 /** Fake Django: the cookie names the user; every request is recorded. */
 type Answer = () => Response | Promise<Response>
 
-function fakeDjango(overrides: { csrf?: Answer; token?: Answer } = {}, expiresIn = 900) {
+function fakeDjango(overrides: { csrf?: Answer; token?: Answer } = {}, expiresIn = 900, cookieName = 'sessionid') {
   const calls: Call[] = []
   let minted = 0
   const userOf = (cookie: string | undefined): number | undefined => {
-    for (const [id, value] of COOKIES) if (cookie?.includes(`sessionid=${value}`)) return id
+    for (const [id, value] of COOKIES) if (cookie?.includes(`${cookieName}=${value}`)) return id
     return undefined
   }
   const doFetch = vi.fn(async (target: string | URL | Request, init: RequestInit = {}) => {
@@ -79,6 +79,22 @@ describe('ai token provider', () => {
       Referer: BASE,
     })
     expect(post.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('uses the configured session cookie name for CSRF and token minting', async () => {
+    const django = fakeDjango({}, 900, 'staff_session')
+    const tokens = createAiTokenProvider({
+      djangoBaseUrl: BASE,
+      cookieName: 'staff_session',
+      fetch: django.doFetch,
+      cookieFor: id => COOKIES.get(id),
+      ownerOf: sid => OWNERS.get(sid),
+    })
+    await expect(tokens.tokenFor('sa')).resolves.toBe('TOK-1-1')
+    expect(django.calls.map(call => call.headers.Cookie)).toEqual([
+      'staff_session=COOKIE-A-secret',
+      'staff_session=COOKIE-A-secret; csrftoken=CSRFC-1',
+    ])
   })
 
   it('mints for each user with that user cookie only, concurrently', async () => {

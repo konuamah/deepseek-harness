@@ -128,6 +128,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['connection', 'agents', 'remoteAccess'], (scope) => {
     const tokens = createAiTokenProvider({
       djangoBaseUrl: settings.baseUrl,
+      cookieName: settings.cookieName,
       cookieFor: userId => admission.cookieFor(userId),
       ownerOf: sessionId => owners.ownerOf(SessionId(sessionId)),
     })
