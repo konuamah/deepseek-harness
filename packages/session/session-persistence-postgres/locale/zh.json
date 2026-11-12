@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "会话 Postgres 存储",
+    "description": "将 Harness 聊天保存在一个共享 Postgres 数据库中，使用租约写入者与员工归属。"
+  }
+}

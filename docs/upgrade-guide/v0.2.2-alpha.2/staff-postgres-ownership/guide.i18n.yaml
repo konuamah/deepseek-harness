@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/staff-postgres-ownership/guide.md
+/:
+  en: 69d94bdbc5b15642
+  zh: fa741bff3269958c
+/staff-ownership-moves-into-postgres-for-the-database-composition:
+  en: c9d6ec357c3e2b4e
+  zh: 6fd31d1915d890a3
+/staff-ownership-moves-into-postgres-for-the-database-composition/change:
+  en: ca025f5affaa06c1
+  zh: 6d6461467a3d31ce
+/staff-ownership-moves-into-postgres-for-the-database-composition/migration:
+  en: d8ab16464c9b289a
+  zh: d5858735df8317b7

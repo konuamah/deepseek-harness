@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { ExternalAdmission, ExternalPeerAdmission } from '@deepseek-ai/dsh-client-connection'
 import { findCookie, type DjangoStaffAuthenticator } from './django-authenticator.ts'
-import type { SessionOwnerIndex } from './owner-index.ts'
+import type { StaffOwnershipReader } from './owner-index.ts'
 import { staffPrincipal } from './principal.ts'
 import type { StaffDecision, StaffIdentity } from './types.ts'
 
@@ -25,12 +25,14 @@ export interface StaffAdmissionOptions {
   readonly authenticator: Pick<DjangoStaffAuthenticator, 'authenticate' | 'invalidateUser'>
   /** Session cookie name the held cookie values belong to. */
   readonly cookieName: string
-  /** Owner index that names the Sessions whose turns a revoke cancels. */
-  readonly owners: SessionOwnerIndex
+  /** Ownership view that names the Sessions whose turns a revoke cancels. */
+  readonly owners: StaffOwnershipReader
   /** Host services a revoke uses: Agents, the Connection, Remote access, and the logger. */
   readonly scope: Pick<Context, 'agents' | 'connection' | 'remoteAccess' | 'logger'>
   /** Called with the user id on every revoke, before the cookie is dropped (the AI token cache hooks in here). */
   readonly onRevoke?: (userId: number) => void
+  /** Whether the ownership authority and chat storage can serve staff. */
+  readonly available?: () => boolean
 }
 
 /** Admission provider plus the revocation and sweep it runs. */
@@ -56,6 +58,13 @@ export interface StaffAdmission extends ExternalPeerAdmission {
   cookieFor(userId: number): string | undefined
   /** Drop every held cookie; later admissions and sweeps do nothing. */
   dispose(): void
+  /**
+   * Revoke every held user: cancel their turns, close their Peers, and drop
+   * their cookies. Used when the chat database fails and every staff operation
+   * must stop without waiting for the next request.
+   * @param why - reason for the log line.
+   */
+  revokeAll(why: string): void
 }
 
 interface Held {
@@ -70,6 +79,7 @@ interface Held {
  */
 export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmission {
   const { authenticator, cookieName, owners, scope, onRevoke } = options
+  const available = options.available ?? (() => true)
   const held = new Map<number, Held>()
   let disposed = false
   let sweeping: Promise<void> | undefined
@@ -140,14 +150,16 @@ export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmis
 
   async function admit(headers: Readonly<Record<string, string | string[] | undefined>>): Promise<ExternalAdmission> {
     const cookie = findCookie(headers.cookie, cookieName)
-    if (!live() || cookie === undefined) return { kind: 'deny' }
+    if (!live() || !available() || cookie === undefined) return { kind: 'deny' }
     let decision: StaffDecision
     try {
       decision = await authenticator.authenticate(headers)
     } catch {
       decision = { kind: 'deny', reason: 'unavailable' }
     }
-    if (!live()) return { kind: 'deny' }
+    // The database may have failed while Django answered: re-check before
+    // caching a decision or announcing an allowed Peer.
+    if (!live() || !available()) return { kind: 'deny' }
     const identity = allowedIdentity(decision)
     if (identity === undefined) {
       const owner = userHoldingCookie(cookie)
@@ -193,6 +205,9 @@ export function createStaffAdmission(options: StaffAdmissionOptions): StaffAdmis
     dispose() {
       disposed = true
       held.clear()
+    },
+    revokeAll(why) {
+      for (const userId of [...held.keys()]) revokeReported(userId, why)
     },
   }
 }

@@ -10,13 +10,13 @@
   zh: ee5eed5139822259
 /deepseek-ai-dsh-api-staff-access/summary:
   en: 4695d7ab5576c25a
-  zh: 2b42d220469c6c94
+  zh: f4b22ace86da9482
 /deepseek-ai-dsh-api-staff-access/table-of-contents:
   en: e6747830a09a09aa
   zh: 9bd476968fdc97dd
 /deepseek-ai-dsh-api-staff-access/use-this-package:
-  en: 319412ff9fe88a46
-  zh: e3a3162b7146e03b
+  en: 3a06a5cf24ecf9ce
+  zh: 89d6a4b949d4967b
 /deepseek-ai-dsh-api-staff-access/understand-the-implementation:
   en: fd7674256021db1f
   zh: b3241db79ef59372
@@ -30,5 +30,8 @@
   en: 60835eca1cee4e0e
   zh: 045010345127cfbb
 /deepseek-ai-dsh-api-staff-access/known-limitations-and-deferred-work:
-  en: 56823d8890d496f5
-  zh: a6abd91457443c10
+  en: 61643fefe65b301e
+  zh: ac1244e7e6909eea
+/deepseek-ai-dsh-api-staff-access/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

@@ -273,6 +273,13 @@ export interface SessionCreateRequest {
   readonly agentPreset?: string
 }
 
+/**
+ * Host-only reservation of a fresh Session identity for a create. The
+ * admission listener installs it; it is never part of the browser request.
+ * The returned release runs after the creation attempt settles.
+ */
+export type SessionCreateReservation = (sessionId: SessionId) => Promise<() => Promise<void>>
+
 /** One create request as the `api-session/create-request` listeners see it. */
 export interface SessionCreateCall {
   /** Request the create runs; a listener replaces it before calling `next()`. */
@@ -281,6 +288,11 @@ export interface SessionCreateCall {
   readonly principal: Principal | undefined
   /** Blank-Session reuse filter; a listener narrows it before calling `next()`. */
   reusable: (sessionId: SessionId) => boolean
+  /**
+   * Reservation hook for the exact id a new Session will use. Called
+   * immediately before the storage create, not when a named Session is reused.
+   */
+  reserve?: SessionCreateReservation
 }
 
 /** Session creation response value. */

@@ -87,7 +87,7 @@ describe('staff agent preset', () => {
     expect(declaredPlugins().names.filter(name => name === MCP_CLIENT)).toHaveLength(1)
     expect(text.match(/^\s*serverName:\s*(\S+)\s*$/gm)).toEqual([expect.stringMatching(/serverName:\s*cinhed$/)])
     expect(text).toContain('id: mcp-cinhed')
-    expect(text).toContain('url: http://127.0.0.1:8004/mcp')
+    expect(text).toContain("process.env.DSH_TOOL_URL ?? 'http://127.0.0.1:8004/mcp'")
   })
 
   it('uses the server name that the staff-access toolServerName defaults to', () => {

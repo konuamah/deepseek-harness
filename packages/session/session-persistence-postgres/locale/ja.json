@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "セッション Postgres ストレージ",
+    "description": "Harness のチャットを共有 Postgres データベースに保存し、リース付きライターとスタッフ所有権を使用します。"
+  }
+}

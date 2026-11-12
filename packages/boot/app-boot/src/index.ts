@@ -952,6 +952,10 @@ const requiredStartupEntryIds = new Set<string>([
   'web-runtime',
   'modules',
   'connection',
+  // The staff Postgres composition may not run without its persistence and
+  // admission plugins: a missing one must fail startup, not warn.
+  'session-persistence-postgres',
+  'staff-access',
   'headless-runner',
   'acp',
   'sdk-jsonrpc-server',

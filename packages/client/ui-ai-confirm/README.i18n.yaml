@@ -3,32 +3,35 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-ai-confirm/README.md
 /:
-  en: ffb6f68044762763
-  zh: 9a868b54f372019a
+  en: db21ee62dad0ac59
+  zh: 4afc38819b86ba20
 /deepseek-ai-dsh-client-ui-ai-confirm:
   en: 6553c83b18233f85
   zh: ef7b3aff16617299
 /deepseek-ai-dsh-client-ui-ai-confirm/summary:
-  en: 4b13243588c8a986
-  zh: 7fe0050b518925f4
+  en: 238694caf5794207
+  zh: d57fd7f67b849c68
 /deepseek-ai-dsh-client-ui-ai-confirm/table-of-contents:
   en: d152484eb41ac6b4
-  zh: d152484eb41ac6b4
+  zh: ffab54373e9e61f0
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package:
-  en: d3a58378d576b6ac
-  zh: 68e4f64bb59f92e1
+  en: 3da0678ae5bedd45
+  zh: fdb17a2ea1f0ed43
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/what-staff-see:
   en: e46ae40d3d1330f2
   zh: bf5108aaef61f2c7
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/applications-cards:
   en: 3a463044319361c6
   zh: ab4f5fbb8c4d5561
+/deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/private-forms:
+  en: 50ff3d54b898e32a
+  zh: d0946078945f30b3
 /deepseek-ai-dsh-client-ui-ai-confirm/use-this-package/proxy-requirements:
   en: 58130e3fe2588719
   zh: f9920316abfaa86f
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation:
   en: 42b15ac6321706aa
-  zh: 42b15ac6321706aa
+  zh: 8d8e9843515830f6
 /deepseek-ai-dsh-client-ui-ai-confirm/understand-the-implementation/registration:
   en: 3eb6372fcc175ed9
   zh: 521c74d79172ac30
@@ -43,10 +46,10 @@
   zh: dd5f67107d94fb3f
 /deepseek-ai-dsh-client-ui-ai-confirm/further-exploration:
   en: 8596e25a92335323
-  zh: 1e5f8f1dc1052f62
+  zh: 6672bb03c131c7ed
 /deepseek-ai-dsh-client-ui-ai-confirm/model-experience:
   en: 215e7ba838619b7b
-  zh: 215e7ba838619b7b
+  zh: a311da3843709f90
 /deepseek-ai-dsh-client-ui-ai-confirm/model-experience/confirming-a-prepared-batch:
   en: f5898f4b29bfdc27
   zh: f5898f4b29bfdc27
@@ -60,8 +63,8 @@
   en: 07760e9d353e9256
   zh: a6377f1ba32ed036
 /deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work:
-  en: 60205460c74963b7
-  zh: 74b1a7083de8343e
+  en: b42be5167c5d9a60
+  zh: 5cf0ddd9421146d6
 /deepseek-ai-dsh-client-ui-ai-confirm/known-limitations-and-deferred-work/dev-note:
   en: cbd1d5fc732e2c0c
-  zh: 45f66e768bf30e44
+  zh: 6963954fa0b31a8f

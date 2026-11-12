@@ -243,7 +243,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `typertGateway` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:131`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:132`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -2380,7 +2380,7 @@ export interface LspLocalServerConfig {
 ## `@deepseek-ai/dsh-mcp-client`
 
 - `inject`: `tools`
-- `source`: [`packages/mcp/mcp-client/src/index.ts:104`](../packages/mcp/mcp-client/src/index.ts)
+- `source`: [`packages/mcp/mcp-client/src/index.ts:105`](../packages/mcp/mcp-client/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -3077,6 +3077,48 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-persistence-jsonl -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-persistence-postgres -->
+<a id="deepseek-aidsh-session-persistence-postgres"></a>
+
+## `@deepseek-ai/dsh-session-persistence-postgres`
+
+- `source`: [`packages/session/session-persistence-postgres/src/index.ts:32`](../packages/session/session-persistence-postgres/src/index.ts)
+
+```ts config-catalog
+/** Plugin config for the shared Postgres chat database. */
+export interface Config {
+  /**
+   * Postgres connection string for the dedicated chat database login. Supply
+   * it from the deployment environment; it is never logged or written to a
+   * Session.
+   */
+  connectionString: string
+  /** Largest pooled connection count. Defaults to 10. */
+  maxConnections?: number
+  /** Bound on opening one connection. Defaults to 5 000 ms. */
+  connectionTimeoutMs?: number
+  /** Bound on one query and each acquired client's statement timeout. Defaults to 10 000 ms. */
+  queryTimeoutMs?: number
+  /** Writer lease lifetime from database time. Defaults to 30 000 ms. */
+  leaseMs?: number
+  /** Writer lease renewal interval; must be shorter than `leaseMs`. Defaults to 10 000 ms. */
+  renewIntervalMs?: number
+  /** Interval of the independent health query. Defaults to 15 000 ms. */
+  healthIntervalMs?: number
+  /** Bound on waiting for another instance's startup migration. Defaults to 10 000 ms. */
+  migrationLockTimeoutMs?: number
+  /** `application_name` reported to Postgres. Defaults to `dsh-harness`. */
+  applicationName?: string
+  /** Delete chats whose last activity is older than this many days. Defaults to 90. */
+  retentionDays?: number
+  /** Interval between retention sweeps. Defaults to one hour. */
+  retentionIntervalMs?: number
+  /** Largest number of Sessions one sweep deletes. Defaults to 1000. */
+  retentionBatchSize?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-persistence-postgres -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-projection-cache -->
 <a id="deepseek-aidsh-session-projection-cache"></a>

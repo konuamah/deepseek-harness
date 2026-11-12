@@ -16,16 +16,21 @@ import type {
   RemoteAccessPolicy,
   RemoteAccessRole,
 } from '@deepseek-ai/dsh-api-remote-access/types'
-import type { SessionOwnerIndex } from './owner-index.ts'
+import type { StaffOwnershipReader } from './owner-index.ts'
 import type { StaffPrincipal } from './principal.ts'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 
 /** Options for {@link createStaffPolicy}. */
 export interface StaffPolicyOptions {
-  /** Owner index that names each user's Sessions and re-checks ownership on each decision. */
-  readonly owners: SessionOwnerIndex
+  /** Ownership view that names each user's Sessions and re-checks ownership on each decision. */
+  readonly ownership: StaffOwnershipReader
   /** The shared staff Workspace id, or undefined until the plugin has registered it; no Workspace is bound while undefined. */
   readonly workspaceId: () => WorkspaceId | undefined
+  /**
+   * Whether the ownership authority is available. When it is not, the policy
+   * binds nothing, so existing and new bindings alike refuse work.
+   */
+  readonly available?: () => boolean
 }
 
 /** Global calls every staff user may make. */
@@ -105,20 +110,37 @@ const NOT_OWNED: RemoteAccessDecision = Object.freeze({ kind: 'deny', reason: 's
  * @returns The policy to register under the `staff` principal kind.
  */
 export function createStaffPolicy(options: StaffPolicyOptions): RemoteAccessPolicy<StaffPrincipal> {
-  const { owners, workspaceId } = options
+  const { ownership, workspaceId } = options
+  const available = options.available ?? (() => true)
   return {
     bindings(staff) {
-      const bindings: RemoteAccessBinding[] = [{ role: STAFF_GLOBAL_ROLE, resource: { kind: 'global' } }]
-      const sharedWorkspace = workspaceId()
-      if (sharedWorkspace !== undefined) {
-        bindings.push({ role: STAFF_WORKSPACE_ROLE, resource: { kind: 'workspace', id: sharedWorkspace } })
-      }
+      // A latched ownership-authority failure withdraws every binding, so a
+      // queued or new request cannot act on cached authorization.
+      if (!available()) return []
       const ownedBy: RemoteAccessCondition<'session'> = ({ resource }) =>
-        owners.ownerOf(resource.id) === staff.userId ? ALLOW : NOT_OWNED
-      for (const sessionId of owners.sessionsOf(staff.userId)) {
-        bindings.push({ role: STAFF_OWNED_SESSION_ROLE, resource: { kind: 'session', id: sessionId }, condition: ownedBy })
-      }
-      return bindings
+        available() && ownership.ownerOf(resource.id) === staff.userId ? ALLOW : NOT_OWNED
+      return [
+        { role: STAFF_GLOBAL_ROLE, resource: { kind: 'global' }, condition: () => available() ? ALLOW : NOT_OWNED },
+        ...workspaceBindings(workspaceId(), available),
+        ...ownership.sessionsOf(staff.userId).map(sessionId => ({
+          role: STAFF_OWNED_SESSION_ROLE,
+          resource: { kind: 'session' as const, id: sessionId },
+          condition: ownedBy,
+        })),
+      ]
     },
   }
+}
+
+/** Bind the shared Workspace only while it exists and the authority is available. */
+function workspaceBindings(
+  sharedWorkspace: WorkspaceId | undefined,
+  available: () => boolean,
+): RemoteAccessBinding[] {
+  if (sharedWorkspace === undefined) return []
+  return [{
+    role: STAFF_WORKSPACE_ROLE,
+    resource: { kind: 'workspace', id: sharedWorkspace },
+    condition: () => available() ? ALLOW : NOT_OWNED,
+  }]
 }

@@ -1,0 +1,47 @@
+# Staff chat storage overlay: shared Postgres chats with database-backed
+# ownership. Apply after the web bundle, for example:
+#
+#   pnpm dsh --profile web --patch \
+#     packages/bundle/web-app/overlays/staff-postgres.patch.yml
+#
+# Required environment:
+#   DSH_CHAT_DATABASE_URL  dedicated chat-database login, never Django's database
+#   DSH_DJANGO_BASE_URL    Django origin used to authenticate staff sessions
+#
+# This composition deliberately disables the JSONL provider, the owner
+# sidecar, and the durable projection cache. Chat history, ownership, and
+# conversation checkpoints live in Postgres; attachments, output spills, and
+# exports are not moved by this overlay. The in-memory session-query index
+# stays mounted with `openAt: never`, so no SQLite file is opened.
+
+- id: session-persistence-jsonl
+  disabled: true
+
+- id: session-projection-cache
+  disabled: true
+
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: never
+
+- id: staff-access
+  disabled: false
+  config:
+    ownership: postgres
+    djangoBaseUrl: !!js process.env.DSH_DJANGO_BASE_URL
+
+- insert:
+    - id: session-persistence-postgres
+      name: '@deepseek-ai/dsh-session-persistence-postgres'
+      config:
+        connectionString: !!js process.env.DSH_CHAT_DATABASE_URL
+        maxConnections: 10
+        connectionTimeoutMs: 5000
+        queryTimeoutMs: 10000
+        leaseMs: 30000
+        renewIntervalMs: 10000
+        healthIntervalMs: 15000
+        retentionDays: 90
+        retentionIntervalMs: 3600000
+        retentionBatchSize: 1000

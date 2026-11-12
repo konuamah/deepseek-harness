@@ -9,23 +9,21 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import type { McpHeaders } from '@deepseek-ai/dsh-mcp-client'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import { createAiTokenProvider } from './ai-token.ts'
-import { admitStaffCreates } from './create-admission.ts'
-import { createDjangoStaffAuthenticator } from './django-authenticator.ts'
-import { createStaffAdmission } from './external-admission.ts'
+import { installStaffComposition, postgresOwnerIndex, type StaffSettings } from './composition.ts'
 import { createSessionOwnerIndex, type SessionOwnerIndex } from './owner-index.ts'
-import { createStaffPolicy } from './policy.ts'
 import { prepareStaffWorkspaceDir, resolveStaffWorkspaceDir } from './staff-workspace.ts'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 
 export const name = 'staff-access'
 
 /** Configuration of the staff access plugin. */
 export interface Config {
-  /** Owner-local JSON file recording which staff user owns each Session. */
-  readonly ownersFile: string
+  /**
+   * Owner authority. `file` (the default) uses the `ownersFile` sidecar;
+   * `postgres` uses the shared chat database and never opens the sidecar.
+   */
+  readonly ownership?: 'file' | 'postgres'
+  /** Owner-local JSON file recording which staff user owns each Session. Required in file mode; forbidden in postgres mode. */
+  readonly ownersFile?: string
   /** Django origin, such as `https://django.example`; http and https only, no path, query, or credentials. */
   readonly djangoBaseUrl: string
   /** Session cookie name the staff caller presents. Defaults to `sessionid`. */
@@ -78,14 +76,8 @@ const LOGGED_DENIAL_LIMIT = 2000
 const DENIAL_LOGGER = 'staff-access'
 
 /** Config with every default applied and every value checked. */
-interface Settings {
-  readonly baseUrl: string
-  readonly cookieName: string
-  readonly roles: readonly string[]
-  readonly ttlMs: number
-  readonly sweepIntervalMs: number
+interface Settings extends StaffSettings {
   readonly logDenied: boolean
-  readonly toolServerName: string
 }
 
 /**
@@ -95,67 +87,64 @@ interface Settings {
  * @throws Error when `ownersFile` is missing or empty, when a setting is invalid, or when the owner file does not load.
  */
 export function apply(ctx: Context, config: Config): void {
-  if (typeof config.ownersFile !== 'string' || config.ownersFile === '') {
-    throw new Error('staff-access: ownersFile is required')
-  }
+  // Ownership mode and its file requirement are checked first, so a missing
+  // owner file is reported as such.
+  const mode = assertOwnershipConfig(config)
   const settings = resolveSettings(config)
   const workspaceDir = resolveStaffWorkspaceDir(config.workspaceDir)
   prepareStaffWorkspaceDir(workspaceDir)
-  const owners = createSessionOwnerIndex({ file: config.ownersFile })
-  ctx.provide('staffSessions', { owners })
-  // Set once the registry holds the shared Workspace; until then no staff binding or create is admitted.
-  let sharedWorkspace: WorkspaceId | undefined
-  const workspaceId = (): WorkspaceId | undefined => sharedWorkspace
-  ctx.inject(['workspaceRegistry'], (scope) => {
-    scope.effect(() => () => { sharedWorkspace = undefined }, 'staff-access: shared workspace')
-    scope.workspaceRegistry.create(workspaceDir).then(
-      (workspace) => { sharedWorkspace = workspace.id },
-      (error: unknown) => {
-        ctx.logger.error(`staff-access: could not register the staff Workspace: ${error instanceof Error ? error.message : String(error)}`)
-      },
-    )
-  })
-  const authenticator = createDjangoStaffAuthenticator({
-    baseUrl: settings.baseUrl,
-    cookieName: settings.cookieName,
-    roles: settings.roles,
-    ttlMs: settings.ttlMs,
-  })
-  ctx.inject(['remoteAccess'], (scope) => {
-    scope.remoteAccess.registerPolicy('staff', createStaffPolicy({ owners, workspaceId }))
-    admitStaffCreates(scope, { owners, workspaceId })
-  })
-  ctx.inject(['connection', 'agents', 'remoteAccess'], (scope) => {
-    const tokens = createAiTokenProvider({
-      djangoBaseUrl: settings.baseUrl,
-      cookieName: settings.cookieName,
-      cookieFor: userId => admission.cookieFor(userId),
-      ownerOf: sessionId => owners.ownerOf(SessionId(sessionId)),
-    })
-    const admission = createStaffAdmission({
-      authenticator, cookieName: settings.cookieName, owners, scope, onRevoke: (userId) => { tokens.drop(userId) },
-    })
-    scope.provide('externalPeerAdmission', admission)
-    const mcpHeaders: McpHeaders = {
-      async headersFor(serverName, exec) {
-        if (serverName !== settings.toolServerName) return {}
-        // A call with no Agent has no owner to mint for.
-        if (exec.agent === undefined) throw new Error('staff-access: sign in again')
-        return { Authorization: `Bearer ${await tokens.tokenFor(exec.agent.id)}` }
-      },
-    }
-    scope.provide('mcpHeaders', mcpHeaders)
-    scope.effect(() => {
-      const timer = setInterval(() => { void admission.sweep() }, settings.sweepIntervalMs)
-      timer.unref()
-      return () => {
-        clearInterval(timer)
-        admission.dispose()
+  if (mode === 'postgres') {
+    ctx.inject(['sessionOwnership', 'sessionPersistence'], (scope) => {
+      if (scope.sessionPersistence.name !== 'session-persistence-postgres') {
+        throw new Error('staff-access: ownership "postgres" requires the session-persistence-postgres provider')
       }
-    }, 'staff-access: revocation sweep')
+      const view = scope.sessionOwnership
+      const owners = postgresOwnerIndex(view)
+      scope.provide('staffSessions', { owners })
+      installStaffComposition(scope, settings, workspaceDir, {
+        ownership: owners,
+        create: {
+          reserve: (sessionId, userId) => view.reserve(sessionId, userId),
+          verify: (sessionId, userId) => view.verify(sessionId, userId),
+          available: () => view.ready(),
+        },
+        available: () => view.ready(),
+        onUnavailable: listener => view.onUnavailable(listener),
+      })
+    })
+    return
+  }
+  const owners = createSessionOwnerIndex({ file: ownerFile(config) })
+  ctx.provide('staffSessions', { owners })
+  installStaffComposition(ctx, settings, workspaceDir, {
+    ownership: owners,
+    create: { record: (sessionId, userId) => owners.record(sessionId, userId) },
+    available: () => true,
   })
   if (settings.logDenied) logDeniedCalls(ctx)
 }
+/** Validate the ownership mode and its owner-file pairing before other settings. */
+function assertOwnershipConfig(config: Config): 'file' | 'postgres' {
+  const mode = config.ownership ?? 'file'
+  if (mode !== 'file' && mode !== 'postgres') {
+    throw new Error('staff-access: ownership must be "file" or "postgres"')
+  }
+  if (mode === 'postgres' && config.ownersFile !== undefined) {
+    throw new Error('staff-access: ownersFile is not used with ownership "postgres"')
+  }
+  if (mode === 'file' && (typeof config.ownersFile !== 'string' || config.ownersFile === '')) {
+    throw new Error('staff-access: ownersFile is required')
+  }
+  return mode
+}
+
+/** The owner-file path, present by the time file mode reaches this point. */
+function ownerFile(config: Config): string {
+  const file = config.ownersFile
+  if (typeof file !== 'string') throw new Error('staff-access: ownersFile is required')
+  return file
+}
+
 
 /**
  * Write each Remote call or event the staff policy refuses for a staff caller to stderr, once per method, user, and resource.
@@ -196,20 +185,45 @@ function logDeniedCalls(ctx: Context): void {
  * @throws Error naming the first invalid setting; the message never echoes a configured value.
  */
 function resolveSettings(config: Config): Settings {
-  const cookieName = config.cookieName ?? DEFAULT_COOKIE_NAME
+  return {
+    baseUrl: originOf(config.djangoBaseUrl),
+    cookieName: resolveCookieName(config.cookieName),
+    roles: resolveRoles(config.roles),
+    ttlMs: resolveDelay(config.ttlMs, DEFAULT_TTL_MS, 'ttlMs'),
+    sweepIntervalMs: resolveDelay(config.sweepIntervalMs, DEFAULT_SWEEP_INTERVAL_MS, 'sweepIntervalMs'),
+    logDenied: resolveLogDenied(config.logDenied),
+    toolServerName: resolveToolServerName(config.toolServerName),
+  }
+}
+
+/** @throws Error for a cookie name outside the header-safe token alphabet. */
+function resolveCookieName(value: string | undefined): string {
+  const cookieName = value ?? DEFAULT_COOKIE_NAME
   assertCookieName(cookieName)
-  const roles = config.roles ?? DEFAULT_ROLES
+  return cookieName
+}
+
+/** @throws Error for an empty or malformed role list. */
+function resolveRoles(value: readonly string[] | undefined): readonly string[] {
+  const roles = value ?? DEFAULT_ROLES
   assertRoles(roles)
-  const ttlMs = config.ttlMs ?? DEFAULT_TTL_MS
-  assertDelay(ttlMs, 'ttlMs')
-  const sweepIntervalMs = config.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
-  assertDelay(sweepIntervalMs, 'sweepIntervalMs')
-  const logDenied = resolveLogDenied(config.logDenied)
-  const toolServerName = config.toolServerName ?? DEFAULT_TOOL_SERVER_NAME
+  return roles
+}
+
+/** @throws Error for a delay outside the timer bounds. */
+function resolveDelay(value: number | undefined, fallback: number, field: string): number {
+  const delay = value ?? fallback
+  assertDelay(delay, field)
+  return delay
+}
+
+/** @throws Error for a server name outside the MCP identifier alphabet. */
+function resolveToolServerName(value: string | undefined): string {
+  const toolServerName = value ?? DEFAULT_TOOL_SERVER_NAME
   if (typeof toolServerName !== 'string' || !/^[A-Za-z0-9_-]+$/.test(toolServerName)) {
     throw new Error('staff-access: toolServerName must use only letters, digits, "_", or "-"')
   }
-  return { baseUrl: originOf(config.djangoBaseUrl), cookieName, roles, ttlMs, sweepIntervalMs, logDenied, toolServerName }
+  return toolServerName
 }
 
 /**

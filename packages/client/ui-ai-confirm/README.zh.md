@@ -7,11 +7,11 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
-`dsh-client-ui-ai-confirm` 将 CInHEd 工具服务的 `prepare_approve`、`prepare_reject`、`prepare_request_documents`、`prepare_cancel`、`prepare_verify_document`、`prepare_reject_document`、`prepare_enroll` 和 `prepare_send_offer` 工具的结果渲染为确认卡片。卡片使用员工本人的会话加载已准备的批次以及每份申请或材料所属申请人的姓名，允许员工修改原因；点击确认后，它会铸造一个短期写入令牌，使用掉该批次，并逐条写入记录。prepare 结果不含姓名；读取工具结果可以包含申请人的名和姓。写入令牌、浏览器加载的姓名和写入结果不会提供给模型。它还会把工具服务的 `open_application_form` 和 `open_offer_form` 标记渲染为私有表单：员工填写申请人信息、选择专业、入学批次和材料，或编辑录取通知草稿。表单值和文件直接通过员工会话发送给 Django，绝不进入对话或模型。
+`dsh-client-ui-ai-confirm` 将 CInHEd 工具的已准备操作（批准、拒绝、材料、取消、录取、发送录取通知）渲染为确认卡片，并将 `open_application_form` 与 `open_offer_form` 标记渲染为私有表单。卡片使用员工本人的会话加载已准备批次以及申请或材料所属申请人的姓名，允许员工修改原因；点击确认后铸造短期写入令牌并逐条写入记录。prepare 结果不含姓名；读取结果可以包含姓名。表单值和文件直接通过员工会话发送给 Django，绝不进入对话或模型。令牌、浏览器加载的姓名与写入结果不会提供给模型。
 
-## Table of Contents
+## 目录
 
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
@@ -23,7 +23,7 @@ kind: "package-reference"
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用此包
 
 Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HOME/profiles/web/cordis.patch.yml`）中启用它，补丁只设置 `disabled: false`（不带配置）：
 
@@ -74,7 +74,7 @@ Web 包中该行默认随附 `disabled: true`。请在 profile 补丁（`$DSH_HO
 -----
 
 <a id="understand-the-implementation"></a>
-## Understand the implementation
+## 理解实现
 
 <details>
 <summary>Implementation internals — click to expand</summary>
@@ -100,7 +100,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 延伸阅读
 
 - [ui-tool](../ui-tool/README.zh.md)：承载 `tool.call.toolview` 插槽的工具调用展示层。
 - [ui-skill](../ui-skill/README.zh.md)：同一插槽中另一个由业务负责的注册。
@@ -108,7 +108,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
 ### Confirming a prepared batch
 
@@ -124,7 +124,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 
 无。本包从不改写先前请求的 token。
 
-## Known Limitations and Deferred Work
+## 已知限制与待办工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
@@ -140,7 +140,7 @@ store 按工具服务的待处理操作 id 保存每个批次的阶段、正在�
 - **浏览器写入使用模拟接口**：无需密钥的 Web 重放覆盖卡片堆叠，以及注册和发送录取通知书时的精确编号确认，包括请求正文及输入编号和令牌不进入 Session 日志的检查。它不验证真实 Django 写入或邮件投递。
 
 <a id="dev-note"></a>
-### Dev Note
+### 开发备注
 
 <details>
 <summary>Working context for maintainers — click to expand</summary>

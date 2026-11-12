@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Postgres Storage",
+    "description": "Store Harness chats in one shared Postgres database with leased writers and staff ownership."
+  }
+}

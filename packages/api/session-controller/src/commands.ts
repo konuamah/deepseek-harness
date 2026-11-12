@@ -134,6 +134,7 @@ export class SessionCommandController {
         reusable: sessionId => !this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)
           && (workspace === undefined || workspace.sessionIds.includes(sessionId))
           && call.reusable(sessionId),
+        ...(call.reserve === undefined ? {} : { reserve: call.reserve }),
       })
     } catch (error) {
       if (held && namedId !== undefined) this.announcements.forget(namedId)

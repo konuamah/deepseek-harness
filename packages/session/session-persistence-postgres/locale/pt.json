@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Armazenamento Postgres de sessões",
+    "description": "Armazena os chats do Harness em um banco Postgres compartilhado com escritores arrendados e propriedade da equipe."
+  }
+}

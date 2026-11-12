@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Stockage Postgres des sessions",
+    "description": "Stocke les conversations Harness dans une base Postgres partagée avec des écrivains loués et la propriété du personnel."
+  }
+}

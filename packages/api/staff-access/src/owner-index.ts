@@ -25,14 +25,8 @@ export interface SessionOwnerIndexOptions {
   readonly parentOf?: (sessionId: SessionId) => SessionId | undefined
 }
 
-/** Which staff user owns each Session, with the write path that keeps the file current. */
-export interface SessionOwnerIndex {
-  /**
-   * Record the owner of a Session that has none; recording the same owner again is a no-op.
-   * @param sessionId - Session to own.
-   * @param userId - Positive safe-integer Django user id.
-   */
-  record(sessionId: SessionId, userId: number): void
+/** The synchronous ownership reads every staff access decision performs. */
+export interface StaffOwnershipReader {
   /**
    * The owner of a Session, or of its nearest ancestor within the parent-hop cap.
    * @param sessionId - Session to look up.
@@ -45,6 +39,16 @@ export interface SessionOwnerIndex {
    * @returns The owned Session ids in insertion order.
    */
   sessionsOf(userId: number): SessionId[]
+}
+
+/** Which staff user owns each Session, with the write path that keeps the file current. */
+export interface SessionOwnerIndex extends StaffOwnershipReader {
+  /**
+   * Record the owner of a Session that has none; recording the same owner again is a no-op.
+   * @param sessionId - Session to own.
+   * @param userId - Positive safe-integer Django user id.
+   */
+  record(sessionId: SessionId, userId: number): void
   /**
    * Remove a Session's owner; a Session with no owner leaves the file untouched.
    * @param sessionId - Session whose owner is dropped.

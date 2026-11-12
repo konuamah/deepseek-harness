@@ -78,6 +78,7 @@
             config:
               serverName: cinhed
               transport: streamable-http
-              url: http://127.0.0.1:8004/mcp
+              # A deployment sets DSH_TOOL_URL to the tool service's private address; loopback is the local default.
+              url: !!js process.env.DSH_TOOL_URL ?? 'http://127.0.0.1:8004/mcp'
               headers:
                 Authorization: Bearer placeholder

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sitzungs-Postgres-Speicher",
+    "description": "Speichert Harness-Chats in einer gemeinsamen Postgres-Datenbank mit geleasten Schreibern und Mitarbeiterbesitz."
+  }
+}

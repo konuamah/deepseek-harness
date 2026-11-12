@@ -5,6 +5,6 @@ export { apply, name, type Config, type StaffSessionsService } from './plugin.ts
 export { createAiTokenProvider } from './ai-token.ts'
 export type { AiTokenProvider, AiTokenProviderOptions } from './ai-token.ts'
 export { createSessionOwnerIndex } from './owner-index.ts'
-export type { SessionOwnerIndex, SessionOwnerIndexOptions } from './owner-index.ts'
+export type { SessionOwnerIndex, SessionOwnerIndexOptions, StaffOwnershipReader } from './owner-index.ts'
 export { staffPrincipal, type StaffPrincipal } from './principal.ts'
 export { createStaffPolicy } from './policy.ts'

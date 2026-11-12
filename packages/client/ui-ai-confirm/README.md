@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-ai-confirm` renders the result of the CInHEd tool service's `prepare_approve`, `prepare_reject`, `prepare_request_documents`, `prepare_cancel`, `prepare_verify_document`, `prepare_reject_document`, `prepare_enroll`, and `prepare_send_offer` tools as a confirm card. The card loads the prepared batch and each application's or document's name with the staff member's own session, lets them edit the reason, and on Confirm mints a short-lived write token, uses the batch up, and writes each record. Prepare results contain no names; read-tool results may include first and last names. The write token, browser-loaded names, and write outcomes are not model-visible. It also renders the tool service's `open_application_form` and `open_offer_form` markers as private forms: staff enter applicant details, choose programs, intakes and documents, or edit a draft offer. Form values and files go directly to Django with the staff session; they never enter chat or the model.
+`dsh-client-ui-ai-confirm` renders CInHEd tool results: prepared approval, rejection, document, cancellation, enrollment, and offer-send actions as a confirm card, and `open_application_form` or `open_offer_form` markers as private forms. The card loads prepared batches and applicant or document names with the staff member's own session, lets staff edit the reason, and on Confirm mints a short-lived write token and writes each record. Prepare results contain no names; read results may include names. Form values and files go directly to Django with the staff session and never enter chat or the model. Tokens, browser-loaded names, and write outcomes are not model-visible.
 
 ## Table of Contents
 

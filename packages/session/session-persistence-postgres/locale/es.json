@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Almacenamiento Postgres de sesiones",
+    "description": "Guarda los chats del Harness en una base de datos Postgres compartida con escritores arrendados y propiedad del personal."
+  }
+}

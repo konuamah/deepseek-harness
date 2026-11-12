@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
 import type { SessionCreateCall } from '@deepseek-ai/dsh-api-session-controller'
+import type { PostgresOwnershipService } from '@deepseek-ai/dsh-session-persistence-postgres'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -168,5 +169,97 @@ describe('staff create admission', () => {
     await ctx.parallel('api-session/created', SessionId('owner-made'), undefined)
 
     expect(ctx.staffSessions.owners.ownerOf(SessionId('owner-made'))).toBeUndefined()
+  })
+})
+
+/** Fake database ownership service for the postgres admission path. */
+function providePostgresServices(ctx: Context, ready = true): {
+  view: PostgresOwnershipService
+  commit: (id: SessionId, userId: number) => void
+} {
+  const owners = new Map<SessionId, number>()
+  const reservations = new Map<SessionId, number>()
+  const view: PostgresOwnershipService = {
+    ownerOf: id => owners.get(id),
+    sessionsOf: userId => [...owners].filter(([, owner]) => owner === userId).map(([id]) => id),
+    ready: () => ready,
+    reserve: (id, userId) => {
+      const existing = reservations.get(id)
+      if (existing !== undefined && existing !== userId) throw new Error('reserved by another user')
+      reservations.set(id, userId)
+      return async () => { reservations.delete(id) }
+    },
+    verify: async (id, userId) => owners.get(id) === userId,
+    onUnavailable: () => () => undefined,
+  }
+  ctx.provide('sessionOwnership', view)
+  ctx.provide('sessionPersistence', { name: 'session-persistence-postgres' } as never)
+  return {
+    view,
+    commit(id, userId) {
+      reservations.delete(id)
+      owners.set(id, userId)
+    },
+  }
+}
+
+async function setupPostgres(ready = true) {
+  const ctx = new Context()
+  roots.push(ctx)
+  await ctx.plugin(TypertRegistry)
+  await ctx.plugin(RemoteAccessService)
+  provideWorkspaceRegistry(ctx)
+  const fake = providePostgresServices(ctx, ready)
+  await ctx.plugin(StaffAccess, {
+    ownership: 'postgres',
+    djangoBaseUrl: 'https://django.test',
+    workspaceDir: join(dir, 'workspace'),
+  })
+  await settle()
+  return { ctx, ...fake }
+}
+
+describe('staff create admission with database ownership', () => {
+  it('reserves the exact Session id for the caller and verifies the committed owner', async () => {
+    const { ctx, commit } = await setupPostgres()
+    const call = createCall(STAFF)
+    await admit(ctx, call)
+    if (call.reserve === undefined) throw new Error('postgres admission must install a reservation')
+    const id = SessionId('minted-postgres')
+    const release = await call.reserve(id)
+    commit(id, 1)
+
+    await ctx.parallel('api-session/created', id, STAFF)
+
+    expect(ctx.staffSessions.owners.ownerOf(id)).toBe(1)
+    await release()
+  })
+
+  it('keeps two concurrent users on their own reserved ids', async () => {
+    const { ctx, commit } = await setupPostgres()
+    const first = createCall(STAFF)
+    const second = createCall(staffPrincipal({ userId: 2, role: 'ADMISSIONS_OFFICER' }))
+    await Promise.all([admit(ctx, first), admit(ctx, second)])
+    const firstId = SessionId('user-1')
+    const secondId = SessionId('user-2')
+    await Promise.all([first.reserve!(firstId), second.reserve!(secondId)])
+    commit(firstId, 1)
+    commit(secondId, 2)
+    await Promise.all([
+      ctx.parallel('api-session/created', firstId, STAFF),
+      ctx.parallel('api-session/created', secondId, second.principal),
+    ])
+    expect(ctx.staffSessions.owners.ownerOf(firstId)).toBe(1)
+    expect(ctx.staffSessions.owners.ownerOf(secondId)).toBe(2)
+  })
+
+  it('fails the created event when the committed owner is missing', async () => {
+    const { ctx } = await setupPostgres()
+    await expect(ctx.parallel('api-session/created', SessionId('unowned-db'), STAFF)).rejects.toThrow()
+  })
+
+  it('refuses a create while the database ownership view is unavailable', async () => {
+    const { ctx } = await setupPostgres(false)
+    await expect(admit(ctx, createCall(STAFF))).rejects.toMatchObject({ code: 'gateway/internal' })
   })
 })

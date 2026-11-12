@@ -86,7 +86,7 @@ async function setup(options: { readonly registerPolicy?: boolean } = {}): Promi
   const owners = createSessionOwnerIndex({ file: join(dir, 'owners.json') })
   owners.record(S1, 1)
   owners.record(S2, 2)
-  if (options.registerPolicy !== false) ctx.remoteAccess.registerPolicy('staff', createStaffPolicy({ owners, workspaceId: () => undefined }))
+  if (options.registerPolicy !== false) ctx.remoteAccess.registerPolicy('staff', createStaffPolicy({ ownership: owners, workspaceId: () => undefined }))
   return { ctx, owners }
 }
 
@@ -156,7 +156,7 @@ describe('staff policy refusals', () => {
   it('refuses a session the index names to another user even when a binding was listed', async () => {
     const { ctx, owners } = await setup({ registerPolicy: false })
     const shifted: SessionOwnerIndex = { ...owners, ownerOf: () => 2 }
-    ctx.remoteAccess.registerPolicy('staff', createStaffPolicy({ owners: shifted, workspaceId: () => undefined }))
+    ctx.remoteAccess.registerPolicy('staff', createStaffPolicy({ ownership: shifted, workspaceId: () => undefined }))
     expect(ctx.remoteAccess.decide({ principal: ALICE, action: 'session/prompt', resources: [session(S1)] }))
       .toEqual({ kind: 'deny', reason: 'session-not-owned' })
   })

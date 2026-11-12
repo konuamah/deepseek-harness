@@ -12,6 +12,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
+import type { SessionCreateReservation } from './types.ts'
 
 /** Cold Session identity absent from persistence. */
 export class ApiSessionNotFound extends Error {}
@@ -66,6 +67,11 @@ export interface ApiSessionCreateRequest {
    * @returns whether that Session may be reused.
    */
   readonly reusable: (sessionId: SessionId) => boolean
+  /**
+   * Host-only reservation of the exact id a new Session will use; absent for
+   * an ordinary create and never present in a browser request.
+   */
+  readonly reserve?: SessionCreateReservation
 }
 
 /** The Session one creation request created or reused. */
@@ -239,7 +245,7 @@ export class ApiSessionAgentController {
    */
   async createSession(request: ApiSessionCreateRequest): Promise<ApiSessionCreated> {
     const named = request.sessionId
-    if (named === undefined) return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset)))
+    if (named === undefined) return this.created(await this.createMinted(request, await this.composeAgent(request.agentPreset)))
     return this.inOrder(named, async () => this.created(await this.claim(named, request)))
   }
 
@@ -352,14 +358,14 @@ export class ApiSessionAgentController {
         throw new ApiSessionCwdConflict(live.id, request.cwd, live.session.header.cwd)
       }
       const composition = await this.composeAgent(request.agentPreset)
-      return await this.reuseLive(live, request, composition) ?? this.createMinted(request.cwd, composition)
+      return await this.reuseLive(live, request, composition) ?? this.createMinted(request, composition)
     }
     let observation: SessionObservation
     try {
       observation = await this.ctx.sessionQuery.observeSession(sessionId)
     } catch (error: unknown) {
       if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
-      return this.createAgent(sessionId, request.cwd, await this.composeAgent(request.agentPreset))
+      return this.createAgent(sessionId, request, await this.composeAgent(request.agentPreset))
     }
     let reusable: boolean
     {
@@ -373,7 +379,7 @@ export class ApiSessionAgentController {
       reusable = request.reusable(sessionId) && !observed.events.some(event => event.type === 'turn/start')
     }
     const composition = await this.composeAgent(request.agentPreset)
-    if (!reusable) return this.createMinted(request.cwd, composition)
+    if (!reusable) return this.createMinted(request, composition)
     this.assertPresetApplicable(sessionId, request.agentPreset)
     try {
       return (await this.ctx.agents.resume({
@@ -382,11 +388,11 @@ export class ApiSessionAgentController {
         setup: this.reuseSetup(composition),
       })).agent
     } catch (error: unknown) {
-      if (error instanceof ApiSessionStartedSinceObserved) return this.createMinted(request.cwd, composition)
+      if (error instanceof ApiSessionStartedSinceObserved) return this.createMinted(request, composition)
       if (!(error instanceof Error) || error.name !== 'SessionAlreadyOwnedError') throw error
       // Another resume in this process may hold the writer for the Agent it published.
       return this.ctx.agents.get(sessionId) === undefined
-        ? this.createMinted(request.cwd, composition)
+        ? this.createMinted(request, composition)
         : this.claim(sessionId, request)
     }
   }
@@ -441,27 +447,39 @@ export class ApiSessionAgentController {
     return { agent, agentPreset: this.presetForSession(agent.session) }
   }
 
-  private createMinted(cwd: string, composition: ApiSessionComposition): Promise<Agent> {
-    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), cwd, composition)
+  private createMinted(request: ApiSessionCreateRequest, composition: ApiSessionComposition): Promise<Agent> {
+    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), request, composition)
   }
 
-  private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition): Promise<Agent> {
+  private async createAgent(sessionId: SessionId, request: ApiSessionCreateRequest, composition: ApiSessionComposition): Promise<Agent> {
+    const cwd = request.cwd
     try {
       await mkdir(cwd, { recursive: true })
     } catch (error: unknown) {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
-    const handle = await this.ctx.agents.create({
-      sessionId,
-      agentOptions: this.agentOptions(),
-      meta: {
-        cwd,
-        ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
-      },
-      setup: composition.setup,
-    })
-    this.createdHandles.set(handle.agent, handle)
-    return handle.agent
+    const release = await request.reserve?.(sessionId)
+    try {
+      const handle = await this.ctx.agents.create({
+        sessionId,
+        agentOptions: this.agentOptions(),
+        meta: {
+          cwd,
+          ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
+        },
+        setup: composition.setup,
+      })
+      this.createdHandles.set(handle.agent, handle)
+      return handle.agent
+    } finally {
+      try {
+        await release?.()
+      } catch (error: unknown) {
+        // A reservation cleanup failure must not turn a successful create into
+        // an error the caller cannot dispose; the reservation owner reports it.
+        this.ctx.logger.warn(`session "${sessionId}": create reservation release failed: ${String(error)}`)
+      }
+    }
   }
 
   /**
